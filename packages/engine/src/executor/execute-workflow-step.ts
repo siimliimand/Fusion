@@ -6,7 +6,7 @@
  * structured verdict parsing, browser-verification probing, and await-input
  * sentinel handling.
  */
-import { exec } from "node:child_process";
+import { exec, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type {
   AgentStore,
@@ -36,6 +36,7 @@ import {
 import type { AgentSession, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { probeReviewCheckout } from "../worktree/review-checkout-clean.js";
 import { createPostMergeEvidenceTools } from "./post-merge-evidence-tools.js";
+import { resolveIntegrationBranch, type IntegrationBranchSettings } from "../merge/integration-branch.js";
 import { createTaskPromptWriteTool } from "./shared-worker-tools.js";
 import type { PluginRunner } from "../plugins/plugin-runner.js";
 import { AgentLogger } from "../agents/agent-logger.js";
@@ -120,6 +121,7 @@ import { buildGraphPlanReviewConvergenceContext, buildReviewConvergenceContext, 
 import { attachAgentUsageTelemetry, emitAgentSessionStart } from "../agents/agent-usage-telemetry.js";
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 export const WORKFLOW_STEP_NOTES_REPAIR_TIMEOUT_MS = 120_000;
 
@@ -180,6 +182,82 @@ Maintain each prior finding by ID if it still applies, or approve. Do not derive
     ...files,
     ...(changedSince.shortstat ? [`Diff stat: ${changedSince.shortstat}`] : []),
   ].join("\n");
+}
+
+/*
+FNXC:PostMergeLandingTarget 2026-11-04-09:53 (FIX-11, SUBC-013):
+Post-merge verification must audit the landing on the branch it LANDED on, not the
+project default. The recorded `mergeDetails.mergeTargetBranch` is authoritative;
+`resolveIntegrationBranch` (project default) is only the fallback for rows lacking a
+recorded target. A mission task's landing on `mission/M-...` is intentionally absent
+from `main`, so a default-first evidence context drove a landed card into a permanent
+merge-confirmed limbo (the reviewer kept "verifying" the work was not landed).
+
+Policy: mission-task landings are verified against the mission branch; arrival on the
+project default is the mission PROMOTION's concern and carries its own verification.
+
+Out of scope: workspace per-repository landings (per-repo records own their evidence;
+the root-cwd commitSha does not describe a single landing target), and pre-merge
+phases (no landing exists yet).
+*/
+export function resolvePostMergeEvidenceBranch(input: {
+  recordedTargetBranch?: string | null;
+  projectDefaultBranch?: string | null;
+}): string | undefined {
+  return input.recordedTargetBranch?.trim() || input.projectDefaultBranch?.trim() || undefined;
+}
+
+/** Best-effort tip of a local branch; undefined on any failure (the context omits the line). */
+export async function resolveBranchTipSha(branch: string, cwd: string): Promise<string | undefined> {
+  const name = branch.trim();
+  if (!name) return undefined;
+  try {
+    const { stdout } = await execFileAsync("git", ["rev-parse", `refs/heads/${name}`], {
+      cwd,
+      timeout: 5_000,
+      maxBuffer: 1024 * 1024,
+    });
+    const tip = stdout.trim();
+    return /^[a-f0-9]{40,64}$/i.test(tip) ? tip : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function buildPostMergeLandingEvidenceContext(args: {
+  taskId: string;
+  phase: string | undefined;
+  task: Pick<Task, "workspaceWorktrees" | "mergeDetails">;
+  settings: IntegrationBranchSettings;
+  rootDir: string;
+}): Promise<string | undefined> {
+  if (args.phase !== "post-merge") return undefined;
+  if (args.task.workspaceWorktrees !== undefined) return undefined;
+  const recordedTargetBranch = args.task.mergeDetails?.mergeTargetBranch?.trim() || undefined;
+  const projectDefaultBranch = await resolveIntegrationBranch(args.rootDir, args.settings).catch(() => undefined);
+  const referenceBranch = resolvePostMergeEvidenceBranch({ recordedTargetBranch, projectDefaultBranch });
+  if (!referenceBranch) return undefined;
+  const landedSha = args.task.mergeDetails?.commitSha?.trim() || undefined;
+  const targetTipSha = await resolveBranchTipSha(referenceBranch, args.rootDir);
+  const diverged = !!recordedTargetBranch && referenceBranch !== (projectDefaultBranch?.trim() || "main");
+  const lines = [
+    "### Landing Evidence Context (post-merge)",
+    `- Landing reference branch: ${referenceBranch}${recordedTargetBranch ? " (recorded landing target of the merge)" : " (project default; no divergent recorded landing target)"}`,
+  ];
+  if (diverged) {
+    lines.push(
+      `- This landing was intentionally made on ${referenceBranch}, NOT on the project default branch (${projectDefaultBranch?.trim() || "main"}). Audit the landing THERE. The landed commit being absent from the project default branch is EXPECTED for target-divergent landings and must never be reported as missing delivery or used as a REVISE reason.`,
+    );
+  }
+  if (landedSha) {
+    lines.push(
+      `- Landed commit: ${landedSha}${targetTipSha ? `\n- Current tip of ${referenceBranch}: ${targetTipSha}` : ""}`,
+      `- Completion criteria: the landed commit ${landedSha.slice(0, 12)} is reachable from ${referenceBranch} (git merge-base --is-ancestor ${landedSha} ${referenceBranch}), and the first post-landing run on ${referenceBranch} at or after ${landedSha.slice(0, 12)} provides the required run evidence.`,
+    );
+  } else {
+    lines.push(`- Completion criteria: verify landing proof on ${referenceBranch}; no landed commit SHA is recorded for this row, so rely on the merge proof and post-landing runs on ${referenceBranch}.`);
+  }
+  return lines.join("\n");
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mirror TaskExecutor method/map surface
@@ -783,6 +861,19 @@ CRITICAL SCOPING RULES — read before doing anything else:
     Graph dispatch supplies a start-time target so input-mode detection survives task edits between
     nodes. Direct workflow-step callers retain the live resolver for backward compatibility.
     */
+    /*
+    FNXC:PostMergeLandingTarget 2026-11-04-09:53 (FIX-11, SUBC-013):
+    Post-merge steps receive the landing target in their evidence context so the verifier audits the
+    branch the merge actually landed on. Computed before the prompt string; workspace rows and
+    non-post-merge phases intentionally receive no block (per-repo records / no landing yet).
+    */
+    const postMergeLandingContextBlock = await buildPostMergeLandingEvidenceContext({
+      taskId: task.id,
+      phase: workflowStep.phase,
+      task,
+      settings,
+      rootDir: deps.rootDir,
+    });
     const systemPrompt = `You are a workflow step agent executing: ${workflowStep.name}
 
   Task Context:
@@ -790,7 +881,7 @@ CRITICAL SCOPING RULES — read before doing anything else:
   - Task Description: ${task.description}
   - Worktree: ${worktreePath}
 
-  ${scopeBlock}${reviewConvergenceContext ? `\n\n${reviewConvergenceContext}` : ""}${workflowStepUserCommentSection ? `\n\n${workflowStepUserCommentSection}` : ""}${priorFindingsBlock}
+  ${postMergeLandingContextBlock ? `${postMergeLandingContextBlock}\n\n` : ""}${scopeBlock}${reviewConvergenceContext ? `\n\n${reviewConvergenceContext}` : ""}${workflowStepUserCommentSection ? `\n\n${workflowStepUserCommentSection}` : ""}${priorFindingsBlock}
 
   Your role:
   - Execute this workflow step exactly as scoped.

@@ -300,7 +300,14 @@ describe("built-in workflows", () => {
       const template = postMerge?.config?.template as { nodes?: Array<{ config?: Record<string, unknown> }> } | undefined;
       const postMergeStep = template?.nodes?.[0]?.config;
       expect(postMergeStep?.gateMode, workflow.id).toBe("gate");
-      expect(postMergeStep?.prompt, workflow.id).toContain("first Full Suite push-to-main run at or after that SHA");
+      /*
+      FNXC:PostMergeLandingTarget 2026-11-04-09:53 (FIX-11, SUBC-013):
+      The required run is scoped to the landing reference branch from the evidence context, not a
+      hardcoded push-to-main run, so a target-divergent landing (mission branch) is audited where it
+      landed. The prompt must also keep telling the verifier a default-branch run is not a substitute.
+      */
+      expect(postMergeStep?.prompt, workflow.id).toContain("first Full Suite run at or after that SHA on the landing reference branch");
+      expect(postMergeStep?.prompt, workflow.id).not.toContain("push-to-main run at or after");
       expect(postMergeStep?.prompt, workflow.id).toContain("completed conclusion for Pipeline smoke tier");
       expect(postMergeStep?.prompt, workflow.id).toContain("explicit evidence-backed disposition");
       expect(postMergeStep?.prompt, workflow.id).toContain("Never fabricate success");

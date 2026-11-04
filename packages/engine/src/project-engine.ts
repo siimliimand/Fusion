@@ -333,8 +333,18 @@ export function shouldRetryAutoMergeConflict(
  *  - { reachable: true, skipped: "no-commit-sha" } when commitSha is unset —
  *    legacy/no-op finalize paths and verified-no-op merges legitimately have
  *    no commitSha; the fast-path must remain functional for those.
+ *
+ * FNXC:PostMergeLandingTarget 2026-11-04-09:53 (FIX-11, SUBC-013):
+ * `integrationBranch` is the AUDIT reference, and the caller must resolve it
+ * target-first via `resolveMergeConfirmedGateBranch`: the recorded
+ * `mergeDetails.mergeTargetBranch` names where the landing actually went
+ * (mission tasks land on `mission/M-...`), so `resolveIntegrationBranch`
+ * (project default) is only the fallback for rows lacking a recorded target.
+ * Auditing the project default for a target-divergent landing is the SUBC-013
+ * defect: the check demanded main, found the mission content absent, and
+ * drove a landed card into a permanent merge-confirmed limbo.
  */
-async function verifyMergeConfirmedReachability(args: {
+export async function verifyMergeConfirmedReachability(args: {
   commitSha: string | undefined;
   integrationBranch: string | undefined;
   cwd: string;
@@ -381,6 +391,83 @@ async function verifyMergeConfirmedReachability(args: {
     }
     return { reachable: false, reason: "git-error", diagnostic };
   }
+}
+
+/*
+FNXC:PostMergeLandingTarget 2026-11-04-09:53 (FIX-11, SUBC-013):
+Target-first resolution of the merge-confirmed gate's audit branch. The recorded
+`mergeDetails.mergeTargetBranch` (where the landing actually went) is authoritative;
+`resolveIntegrationBranch` (project default) is ONLY the fallback for legacy rows that
+lack a recorded target. Precedence mirrors the fast-path caller's existing chain, with
+the literal "main" tail replaced by the resolved project default so a configured
+`integrationBranch` setting is honored for legacy rows too. Workspace tasks are out of
+scope: their per-repository landings own their own evidence records (FN-9059 leases),
+and the root-cwd commitSha does not describe a single landing target (Phase C B2).
+*/
+export interface MergeConfirmedGateBranch {
+  /** The branch the reachability gate must audit. */
+  branch: string;
+  /** Which input supplied the branch — diagnostic, not behavior. */
+  source: "branch-group-integration" | "recorded-merge-target" | "task-base-branch" | "project-default";
+  /** True when the recorded target exists and differs from the project default. */
+  divergedFromProjectDefault: boolean;
+}
+
+export function resolveMergeConfirmedGateBranch(input: {
+  routedFastPathTarget?: string | null;
+  recordedTargetBranch?: string | null;
+  taskBaseBranch?: string | null;
+  projectDefaultBranch?: string | null;
+}): MergeConfirmedGateBranch {
+  const routed = input.routedFastPathTarget?.trim() || "";
+  const recorded = input.recordedTargetBranch?.trim() || "";
+  const base = input.taskBaseBranch?.trim() || "";
+  const projectDefault = input.projectDefaultBranch?.trim() || "main";
+  if (routed) {
+    return { branch: routed, source: "branch-group-integration", divergedFromProjectDefault: !!recorded && recorded !== projectDefault };
+  }
+  if (recorded) {
+    return { branch: recorded, source: "recorded-merge-target", divergedFromProjectDefault: recorded !== projectDefault };
+  }
+  if (base) {
+    return { branch: base, source: "task-base-branch", divergedFromProjectDefault: false };
+  }
+  return { branch: projectDefault, source: "project-default", divergedFromProjectDefault: false };
+}
+
+/*
+FNXC:PostMergeLandingTarget 2026-11-04-09:53 (FIX-11, SUBC-013):
+Target-divergent landings are visible instead of silent: when the recorded target
+differs from the project default, the gate emits `merge:target-branch-divergence`
+(ids-only metadata) through the FN-9175 bounded seam. Deduplicated per
+(taskId, recordedTarget, projectDefault, outcome) because the fast-path re-evaluates
+every auto-merge tick while the card waits on its post-merge gate — the event must
+surface the divergence once, not once per tick. Best-effort: emission failure never
+alters the gate decision.
+*/
+const emittedTargetBranchDivergences = new Set<string>();
+export async function emitMergeTargetBranchDivergence(
+  store: RunAuditSinkHost,
+  args: { taskId: string; recordedTarget: string; projectDefault: string; outcome: "reachable" | "not-reachable" },
+  options: { log?: { warn: (message: string) => void } } = {},
+): Promise<void> {
+  const signature = `${args.taskId}\0${args.recordedTarget}\0${args.projectDefault}\0${args.outcome}`;
+  if (emittedTargetBranchDivergences.has(signature)) return;
+  emittedTargetBranchDivergences.add(signature);
+  await emitBoundedRunAudit(store, {
+    taskId: args.taskId,
+    agentId: "merger",
+    runId: generateSyntheticRunId("merger-target-branch-divergence", args.taskId),
+    domain: "database",
+    mutationType: "merge:target-branch-divergence",
+    target: args.taskId,
+    metadata: {
+      taskId: args.taskId,
+      recordedTarget: args.recordedTarget,
+      projectDefault: args.projectDefault,
+      outcome: args.outcome,
+    },
+  }, { log: options.log });
 }
 
 export interface AutomationSubsystemHealth {
@@ -4433,8 +4520,19 @@ export class ProjectEngine {
                 ? branchGroupForFastPathCandidate
                 : null;
               const routedFastPathTarget = branchGroupForFastPath?.branchName?.trim();
-              const integrationBranchForGate =
-                routedFastPathTarget || task.mergeDetails.mergeTargetBranch || task.baseBranch || "main";
+              /*
+              FNXC:PostMergeLandingTarget 2026-11-04-09:53 (FIX-11, SUBC-013):
+              The gate audits the RECORDED landing target first (mission tasks land on
+              `mission/M-...`); the resolved project default is only the fallback for rows
+              lacking a recorded target — never preferred over it.
+              */
+              const gateBranch = resolveMergeConfirmedGateBranch({
+                routedFastPathTarget,
+                recordedTargetBranch: task.mergeDetails.mergeTargetBranch,
+                taskBaseBranch: task.baseBranch,
+                projectDefaultBranch: fastPathDefaultBranch,
+              });
+              const integrationBranchForGate = gateBranch.branch;
               const expectedFastPathTargetSource = routedFastPathTarget
                 ? "branch-group-integration"
                 : task.mergeDetails.mergeTargetSource;
@@ -4449,6 +4547,14 @@ export class ProjectEngine {
                 integrationBranch: integrationBranchForGate,
                 cwd,
               });
+              if (gateBranch.divergedFromProjectDefault) {
+                await emitMergeTargetBranchDivergence(store, {
+                  taskId,
+                  recordedTarget: task.mergeDetails.mergeTargetBranch?.trim() || "",
+                  projectDefault: fastPathDefaultBranch?.trim() || "main",
+                  outcome: reachability.reachable ? "reachable" : "not-reachable",
+                }, { log: runtimeLog });
+              }
               if (!reachability.reachable) {
                 /*
                  * FNXC:AutoMergeRetries 2026-06-17-04:20:

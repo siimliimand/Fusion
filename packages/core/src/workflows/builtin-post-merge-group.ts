@@ -69,6 +69,15 @@ contradicts that policy and strands every unrelated landed task; require honest 
 FNXC:PostMergeUnrelatedFailures 2026-10-06-22:45:
 Operator requirement: post-merge verification must not fail because of failing tests unrelated to the task.
 REVISE is limited to task-attributed regressions and in-progress post-landing runs, declared via blockingReason; the engine downgrades any other post-merge REVISE to APPROVE_WITH_NOTES.
+
+FNXC:PostMergeLandingTarget 2026-11-04-09:53 (FIX-11, SUBC-013):
+The required post-landing run evidence is scoped to the LANDING REFERENCE BRANCH the engine injects
+into the step's evidence context (the recorded `mergeDetails.mergeTargetBranch`, falling back to the
+project default). The former hardcoded "push-to-main" wording told a target-divergent verifier (e.g.
+a mission task landed on `mission/M-...`) to hunt for runs on main, re-creating the SUBC-013
+default-branch audit even after the reachability gate was fixed. Mission-task landings are verified
+against the mission branch; arrival on the project default is the mission promotion's concern with
+its own verification.
 */
 const POST_MERGE_VERIFICATION_PROMPT = `You are a post-merge verification reviewer. Verify that the task's merged result is safe after integration.
 
@@ -87,7 +96,7 @@ Do not edit product code or the task plan after landing. An actual regression re
 
 ## Required post-landing Full Suite evidence
 This enabled gate requires post-landing Full Suite evidence. Do NOT approve until its delivery record names all of the following that the completed run produced:
-1. The landed SHA and the first Full Suite push-to-main run at or after that SHA, including the run ID and run SHA.
+1. The landed SHA and the first Full Suite run at or after that SHA on the landing reference branch named in the landing evidence context (when the landing went to a non-default branch, a run on the project default branch is NOT the required run), including the run ID and run SHA.
 2. The completed conclusion for Pipeline smoke tier.
 3. The completed conclusion for every Test shard: 1/4, 2/4, 3/4, and 4/4.
 4. All four timing artifacts: test-timings-shard-1, test-timings-shard-2, test-timings-shard-3, and test-timings-shard-4.

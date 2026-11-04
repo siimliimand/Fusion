@@ -314,6 +314,27 @@ export type GitMutationType =
    */
   | "merge:integration-ref-advance"
   /**
+   * FNXC:PostMergeLandingTarget 2026-11-04-09:53 (FIX-11, SUBC-013):
+   * Emitted by the merge-confirmed reachability gate when the task's recorded
+   * landing target (`mergeDetails.mergeTargetBranch`) differs from the project
+   * default integration branch. Target-divergent landings (e.g. mission tasks
+   * landing on a mission branch) are intentional; the gate must audit the
+   * recorded target, and this row makes that divergence visible instead of
+   * silent. Branch names are treated as ids here; never SHAs-of-prose or error
+   * text. Deduplicated per (taskId, recordedTarget, projectDefault, outcome).
+   *
+   * Metadata shape:
+   * ```ts
+   * {
+   *   taskId: string;
+   *   recordedTarget: string;   // mergeDetails.mergeTargetBranch
+   *   projectDefault: string;   // resolveIntegrationBranch fallback the gate no longer prefers
+   *   outcome: "reachable" | "not-reachable";
+   * }
+   * ```
+   */
+  | "merge:target-branch-divergence"
+  /**
    * Emitted by the merger's post-ref-advance auto-sync hook for each other
    * worktree it attempts to fast-forward (typically the user's project-root
    * checkout). Records the per-worktree outcome of the

@@ -712,6 +712,19 @@ The runtime continuation drain is a single-flight pump. Once it claims its re-en
 - `MissionFeatureSync` (`mission-feature-sync.ts`) — feature↔task status synchronization
 - `MissionAutopilot` (`mission-autopilot.ts`) — mission slice auto-progression
 
+**Mission-branch landing verification policy (FIX-11, SUBC-013).** A mission task may intentionally
+land on its mission branch (`mergeDetails.mergeTargetBranch = "mission/M-..."`) rather than the
+project default branch. Post-merge landing evidence is therefore target-aware everywhere: the
+merge-confirmed reachability gate audits the recorded landing target first and uses
+`resolveIntegrationBranch` (the project default) only as the fallback for rows lacking a recorded
+target, the post-merge verification step receives the landing reference branch (and the target's
+tip) in its evidence context, and the required post-landing run evidence is the first run on that
+reference branch. A target-divergent landing being absent from the project default is expected and
+is never a REVISE reason; the divergence itself is made visible via the bounded best-effort
+`merge:target-branch-divergence` audit event. Arrival of mission content on the project default
+branch is the mission *promotion's* concern and carries its own verification — mission-task
+landings are verified against the mission branch, never against `main`.
+
 ### Routine + cron automation
 - `RoutineRunner` (`routine-runner.ts`) — executes routine steps
 - `RoutineScheduler` (`routine-scheduler.ts`) — schedules due routines
