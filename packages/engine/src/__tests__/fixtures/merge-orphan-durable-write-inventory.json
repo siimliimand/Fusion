@@ -197,6 +197,7 @@
     "packages/engine/src/merge/pre-merge-gate-reseed.ts",
     "packages/engine/src/merge/push-after-merge-policy.ts",
     "packages/engine/src/merge/recover-confirmed-merge-push.ts",
+    "packages/engine/src/merge/recover-confirmed-merge-reconcile.ts",
     "packages/engine/src/merge/ruleset-pr-landing.ts",
     "packages/engine/src/merge/stale-content-park.ts",
     "packages/engine/src/merge/stale-content-review-reroute.ts",
@@ -7102,7 +7103,7 @@
       "enclosingSymbolPath": "resumeMissingPostMergeGate",
       "writer": "store.logEntry",
       "ordinal": 1,
-      "lineHint": 150,
+      "lineHint": 230,
       "owningEntryPoint": "runAiMerge>finalizeTask>finalizeProvenAutoMergeTask",
       "reachableDataStates": [
         "Confirmed merge awaiting required post-merge evidence; legacy recovery-owned failure cleanup and missing/rejected gate continuation reseeding."
@@ -7122,7 +7123,7 @@
       "enclosingSymbolPath": "resumeMissingPostMergeGate>seeded",
       "writer": "store.seedWorkspaceCodeReviewContinuationIfIdle",
       "ordinal": 1,
-      "lineHint": 135,
+      "lineHint": 204,
       "owningEntryPoint": "runAiMerge>finalizeTask>finalizeProvenAutoMergeTask",
       "reachableDataStates": [
         "Confirmed merge awaiting required post-merge evidence; legacy recovery-owned failure cleanup and missing/rejected gate continuation reseeding."
@@ -7142,7 +7143,7 @@
       "enclosingSymbolPath": "resumeMissingPostMergeGate>updated",
       "writer": "store.updateTaskAtomic",
       "ordinal": 1,
-      "lineHint": 102,
+      "lineHint": 162,
       "owningEntryPoint": "runAiMerge>finalizeTask>finalizeProvenAutoMergeTask",
       "reachableDataStates": [
         "Confirmed merge awaiting required post-merge evidence; legacy recovery-owned failure cleanup and missing/rejected gate continuation reseeding."
@@ -7380,7 +7381,7 @@
       "enclosingSymbolPath": "recoverConfirmedMergePush",
       "writer": "store.logEntry",
       "ordinal": 1,
-      "lineHint": 108,
+      "lineHint": 163,
       "owningEntryPoint": "indeterminate",
       "reachableDataStates": [
         "Confirmed single-repository landing awaiting remote delivery; independent of evidence approval."
@@ -7400,7 +7401,7 @@
       "enclosingSymbolPath": "recoverConfirmedMergePush",
       "writer": "store.logEntry",
       "ordinal": 2,
-      "lineHint": 115,
+      "lineHint": 170,
       "owningEntryPoint": "indeterminate",
       "reachableDataStates": [
         "Confirmed single-repository landing awaiting remote delivery; independent of evidence approval."
@@ -7415,12 +7416,12 @@
     },
     {
       "callSiteId": "packages/engine/src/merge/recover-confirmed-merge-push.ts::recoverConfirmedMergePush::store.updateTaskAtomic::#1",
-      "callSiteFingerprint": "store.updateTaskAtomic(task.id,(live) => { if (live.updatedAt !== task.updatedAt || !eligible(live, settings) || live.mergeDetails?.commitSha !== sha |)",
+      "callSiteFingerprint": "store.updateTaskAtomic(task.id,(live) => { if (live.updatedAt !== flowSnapshot.updatedAt || !eligible(live, settings) || live.mergeDetails?.commitSha !)",
       "file": "packages/engine/src/merge/recover-confirmed-merge-push.ts",
       "enclosingSymbolPath": "recoverConfirmedMergePush",
       "writer": "store.updateTaskAtomic",
       "ordinal": 1,
-      "lineHint": 77,
+      "lineHint": 132,
       "owningEntryPoint": "indeterminate",
       "reachableDataStates": [
         "Confirmed single-repository landing awaiting remote delivery; independent of evidence approval."
@@ -7440,7 +7441,7 @@
       "enclosingSymbolPath": "recoverConfirmedMergePush",
       "writer": "store.updateTaskAtomic",
       "ordinal": 2,
-      "lineHint": 105,
+      "lineHint": 160,
       "owningEntryPoint": "indeterminate",
       "reachableDataStates": [
         "Confirmed single-repository landing awaiting remote delivery; independent of evidence approval."
@@ -7460,7 +7461,7 @@
       "enclosingSymbolPath": "recoverConfirmedMergePush",
       "writer": "store.updateTaskAtomic",
       "ordinal": 3,
-      "lineHint": 112,
+      "lineHint": 167,
       "owningEntryPoint": "indeterminate",
       "reachableDataStates": [
         "Confirmed single-repository landing awaiting remote delivery; independent of evidence approval."
@@ -7474,13 +7475,193 @@
       "followUpTaskId": "none:no-follow-up-required"
     },
     {
+      "callSiteId": "packages/engine/src/merge/recover-confirmed-merge-reconcile.ts::reconcileConfirmedMergeLanding::store.logEntry::#1",
+      "callSiteFingerprint": "store.logEntry(task.id,mergeConfirmationReconcileExhaustedError(recordedSha, branch, attempts))",
+      "file": "packages/engine/src/merge/recover-confirmed-merge-reconcile.ts",
+      "enclosingSymbolPath": "reconcileConfirmedMergeLanding",
+      "writer": "store.logEntry",
+      "ordinal": 1,
+      "lineHint": 153,
+      "owningEntryPoint": "indeterminate",
+      "reachableDataStates": [
+        "merge-confirmed landing whose recorded SHA is not an ancestor of the local target branch (false-confirmation limbo)"
+      ],
+      "axis1": "checkpoint-covered",
+      "axis1Evidence": "Each reconciliation write is inside the caller-supplied merge-generation fence.write; task updates additionally compare the observed snapshot, recorded SHA, or reconciliation marker before writing.",
+      "axis2Provisional": "already-fenced",
+      "axis2Final": "already-fenced",
+      "observedInSuite": "recover-confirmed-merge-reconcile.test.ts: budget-exhausted honest park",
+      "executionProof": "recover-confirmed-merge-reconcile.test.ts proves the exhausted park logs the honest-blocked marker through the fence.",
+      "followUpTaskId": "none:no-follow-up-required"
+    },
+    {
+      "callSiteId": "packages/engine/src/merge/recover-confirmed-merge-reconcile.ts::reconcileConfirmedMergeLanding::store.logEntry::#2",
+      "callSiteFingerprint": "store.logEntry(task.id,`[post-merge] Recorded landing ${recordedSha.slice(0, 12)} matches same-content commit ${mainSideSha.slice(0, 12)} on ${)",
+      "file": "packages/engine/src/merge/recover-confirmed-merge-reconcile.ts",
+      "enclosingSymbolPath": "reconcileConfirmedMergeLanding",
+      "writer": "store.logEntry",
+      "ordinal": 2,
+      "lineHint": 199,
+      "owningEntryPoint": "indeterminate",
+      "reachableDataStates": [
+        "merge-confirmed landing whose recorded SHA is not an ancestor of the local target branch (false-confirmation limbo)"
+      ],
+      "axis1": "checkpoint-covered",
+      "axis1Evidence": "Each reconciliation write is inside the caller-supplied merge-generation fence.write; task updates additionally compare the observed snapshot, recorded SHA, or reconciliation marker before writing.",
+      "axis2Provisional": "already-fenced",
+      "axis2Final": "already-fenced",
+      "observedInSuite": "recover-confirmed-merge-reconcile.test.ts: content-match reconciles the landing proof log",
+      "executionProof": "recover-confirmed-merge-reconcile.test.ts proves the content-match path logs the landing-proof reconciliation through the fence.",
+      "followUpTaskId": "none:no-follow-up-required"
+    },
+    {
+      "callSiteId": "packages/engine/src/merge/recover-confirmed-merge-reconcile.ts::reconcileConfirmedMergeLanding::store.logEntry::#3",
+      "callSiteFingerprint": "store.logEntry(task.id,restored ? `Auto-recovery: merge re-open seeding failed (${detail}); landing confirmation restored and the recorded SHA )",
+      "file": "packages/engine/src/merge/recover-confirmed-merge-reconcile.ts",
+      "enclosingSymbolPath": "reconcileConfirmedMergeLanding",
+      "writer": "store.logEntry",
+      "ordinal": 3,
+      "lineHint": 293,
+      "owningEntryPoint": "indeterminate",
+      "reachableDataStates": [
+        "merge-confirmed landing whose recorded SHA is not an ancestor of the local target branch (false-confirmation limbo)"
+      ],
+      "axis1": "checkpoint-covered",
+      "axis1Evidence": "Each reconciliation write is inside the caller-supplied merge-generation fence.write; task updates additionally compare the observed snapshot, recorded SHA, or reconciliation marker before writing.",
+      "axis2Provisional": "already-fenced",
+      "axis2Final": "already-fenced",
+      "observedInSuite": "not-observed:defensive compensation around the injected continuation writer; no harness makes replaceActiveTaskWorkflowContinuation reject",
+      "executionProof": "static:per-call-site merge write fence or ownership checkpoint",
+      "followUpTaskId": "none:no-follow-up-required"
+    },
+    {
+      "callSiteId": "packages/engine/src/merge/recover-confirmed-merge-reconcile.ts::reconcileConfirmedMergeLanding::store.logEntry::#4",
+      "callSiteFingerprint": "store.logEntry(task.id,`Auto-recovery: recorded landing SHA was never on ${branch}; merge re-opened`)",
+      "file": "packages/engine/src/merge/recover-confirmed-merge-reconcile.ts",
+      "enclosingSymbolPath": "reconcileConfirmedMergeLanding",
+      "writer": "store.logEntry",
+      "ordinal": 4,
+      "lineHint": 302,
+      "owningEntryPoint": "indeterminate",
+      "reachableDataStates": [
+        "merge-confirmed landing whose recorded SHA is not an ancestor of the local target branch (false-confirmation limbo)"
+      ],
+      "axis1": "checkpoint-covered",
+      "axis1Evidence": "Each reconciliation write is inside the caller-supplied merge-generation fence.write; task updates additionally compare the observed snapshot, recorded SHA, or reconciliation marker before writing.",
+      "axis2Provisional": "already-fenced",
+      "axis2Final": "already-fenced",
+      "observedInSuite": "recover-confirmed-merge-reconcile.test.ts: phantom re-open logs the merge re-opened recovery",
+      "executionProof": "recover-confirmed-merge-reconcile.test.ts proves the re-opened path logs the auto-recovery entry through the fence.",
+      "followUpTaskId": "none:no-follow-up-required"
+    },
+    {
+      "callSiteId": "packages/engine/src/merge/recover-confirmed-merge-reconcile.ts::reconcileConfirmedMergeLanding::store.replaceActiveTaskWorkflowContinuation::#1",
+      "callSiteFingerprint": "store.replaceActiveTaskWorkflowContinuation({runId,taskId,nodeId,kind,state,waitReason,blockedReason,leaseOwner,leaseExpiresAt,lastError,retryAfter,sourceColumn,targetColumn,?,stableWorkflowRunId,irHash})",
+      "file": "packages/engine/src/merge/recover-confirmed-merge-reconcile.ts",
+      "enclosingSymbolPath": "reconcileConfirmedMergeLanding",
+      "writer": "store.replaceActiveTaskWorkflowContinuation",
+      "ordinal": 1,
+      "lineHint": 258,
+      "owningEntryPoint": "indeterminate",
+      "reachableDataStates": [
+        "merge-confirmed landing whose recorded SHA is not an ancestor of the local target branch (false-confirmation limbo)"
+      ],
+      "axis1": "checkpoint-covered",
+      "axis1Evidence": "Each reconciliation write is inside the caller-supplied merge-generation fence.write; task updates additionally compare the observed snapshot, recorded SHA, or reconciliation marker before writing.",
+      "axis2Provisional": "already-fenced",
+      "axis2Final": "already-fenced",
+      "observedInSuite": "recover-confirmed-merge-reconcile.test.ts: phantom re-open seeds the merge-node continuation in-column",
+      "executionProof": "recover-confirmed-merge-reconcile.test.ts proves the re-open seeds exactly one runnable merge-node continuation with sourceColumn/targetColumn equal to the task column.",
+      "followUpTaskId": "none:no-follow-up-required"
+    },
+    {
+      "callSiteId": "packages/engine/src/merge/recover-confirmed-merge-reconcile.ts::reconcileConfirmedMergeLanding::store.updateTaskAtomic::#1",
+      "callSiteFingerprint": "store.updateTaskAtomic(task.id,(live) => { if (live.updatedAt !== task.updatedAt || live.mergeDetails?.mergeConfirmed !== true || live.mergeDetails.com)",
+      "file": "packages/engine/src/merge/recover-confirmed-merge-reconcile.ts",
+      "enclosingSymbolPath": "reconcileConfirmedMergeLanding",
+      "writer": "store.updateTaskAtomic",
+      "ordinal": 1,
+      "lineHint": 141,
+      "owningEntryPoint": "indeterminate",
+      "reachableDataStates": [
+        "merge-confirmed landing whose recorded SHA is not an ancestor of the local target branch (false-confirmation limbo)"
+      ],
+      "axis1": "checkpoint-covered",
+      "axis1Evidence": "Each reconciliation write is inside the caller-supplied merge-generation fence.write; task updates additionally compare the observed snapshot, recorded SHA, or reconciliation marker before writing.",
+      "axis2Provisional": "already-fenced",
+      "axis2Final": "already-fenced",
+      "observedInSuite": "recover-confirmed-merge-reconcile.test.ts: budget-exhausted honest park",
+      "executionProof": "recover-confirmed-merge-reconcile.test.ts proves eligibility/staleness refusals suppress all store writes; the exhausted path performs exactly the fenced status/error park.",
+      "followUpTaskId": "none:no-follow-up-required"
+    },
+    {
+      "callSiteId": "packages/engine/src/merge/recover-confirmed-merge-reconcile.ts::reconcileConfirmedMergeLanding::store.updateTaskAtomic::#2",
+      "callSiteFingerprint": "store.updateTaskAtomic(task.id,(live) => { if (live.updatedAt !== task.updatedAt || live.mergeDetails?.mergeConfirmed !== true || live.mergeDetails.com)",
+      "file": "packages/engine/src/merge/recover-confirmed-merge-reconcile.ts",
+      "enclosingSymbolPath": "reconcileConfirmedMergeLanding",
+      "writer": "store.updateTaskAtomic",
+      "ordinal": 2,
+      "lineHint": 186,
+      "owningEntryPoint": "indeterminate",
+      "reachableDataStates": [
+        "merge-confirmed landing whose recorded SHA is not an ancestor of the local target branch (false-confirmation limbo)"
+      ],
+      "axis1": "checkpoint-covered",
+      "axis1Evidence": "Each reconciliation write is inside the caller-supplied merge-generation fence.write; task updates additionally compare the observed snapshot, recorded SHA, or reconciliation marker before writing.",
+      "axis2Provisional": "already-fenced",
+      "axis2Final": "already-fenced",
+      "observedInSuite": "recover-confirmed-merge-reconcile.test.ts: same-content squash landing is rewritten to the main-side SHA",
+      "executionProof": "recover-confirmed-merge-reconcile.test.ts proves the content-match rewrite performs exactly the fenced commitSha/landedBranchTipSha update and a snapshot refusal writes nothing.",
+      "followUpTaskId": "none:no-follow-up-required"
+    },
+    {
+      "callSiteId": "packages/engine/src/merge/recover-confirmed-merge-reconcile.ts::reconcileConfirmedMergeLanding::store.updateTaskAtomic::#3",
+      "callSiteFingerprint": "store.updateTaskAtomic(task.id,(live) => { if (live.updatedAt !== task.updatedAt || live.column !== task.column || live.mergeDetails?.mergeConfirmed !=)",
+      "file": "packages/engine/src/merge/recover-confirmed-merge-reconcile.ts",
+      "enclosingSymbolPath": "reconcileConfirmedMergeLanding",
+      "writer": "store.updateTaskAtomic",
+      "ordinal": 3,
+      "lineHint": 231,
+      "owningEntryPoint": "indeterminate",
+      "reachableDataStates": [
+        "merge-confirmed landing whose recorded SHA is not an ancestor of the local target branch (false-confirmation limbo)"
+      ],
+      "axis1": "checkpoint-covered",
+      "axis1Evidence": "Each reconciliation write is inside the caller-supplied merge-generation fence.write; task updates additionally compare the observed snapshot, recorded SHA, or reconciliation marker before writing.",
+      "axis2Provisional": "already-fenced",
+      "axis2Final": "already-fenced",
+      "observedInSuite": "recover-confirmed-merge-reconcile.test.ts: true phantom is un-confirmed in one fence before the in-column re-open",
+      "executionProof": "recover-confirmed-merge-reconcile.test.ts proves the phantom un-confirm performs exactly the fenced mergeDetails clear with the reconciliation record and attempt bump.",
+      "followUpTaskId": "none:no-follow-up-required"
+    },
+    {
+      "callSiteId": "packages/engine/src/merge/recover-confirmed-merge-reconcile.ts::reconcileConfirmedMergeLanding::store.updateTaskAtomic::#4",
+      "callSiteFingerprint": "store.updateTaskAtomic(task.id,(live) => { if (live.mergeDetails?.mergeConfirmed !== false || live.mergeDetails.reconciliation?.recordedSha !== recorde)",
+      "file": "packages/engine/src/merge/recover-confirmed-merge-reconcile.ts",
+      "enclosingSymbolPath": "reconcileConfirmedMergeLanding",
+      "writer": "store.updateTaskAtomic",
+      "ordinal": 4,
+      "lineHint": 279,
+      "owningEntryPoint": "indeterminate",
+      "reachableDataStates": [
+        "merge-confirmed landing whose recorded SHA is not an ancestor of the local target branch (false-confirmation limbo)"
+      ],
+      "axis1": "checkpoint-covered",
+      "axis1Evidence": "Each reconciliation write is inside the caller-supplied merge-generation fence.write; task updates additionally compare the observed snapshot, recorded SHA, or reconciliation marker before writing.",
+      "axis2Provisional": "already-fenced",
+      "axis2Final": "already-fenced",
+      "observedInSuite": "not-observed:defensive compensation around the injected continuation writer; no harness makes replaceActiveTaskWorkflowContinuation reject",
+      "executionProof": "static:per-call-site merge write fence or ownership checkpoint",
+      "followUpTaskId": "none:no-follow-up-required"
+    },
+    {
       "callSiteId": "packages/engine/src/merge/ruleset-pr-landing.ts::engageRulesetPrLanding::store.logEntry::#1",
       "callSiteFingerprint": "store.logEntry(taskId,`Push to ${remote}/${targetBranch} was declined by repository rules — engaging PR landing fallback (head ${headBranch} →,\"RulesetPrLanding\")",
       "file": "packages/engine/src/merge/ruleset-pr-landing.ts",
       "enclosingSymbolPath": "engageRulesetPrLanding",
       "writer": "store.logEntry",
       "ordinal": 1,
-      "lineHint": 222,
+      "lineHint": 221,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "single-repository merge finalization or fenced merge-failure recovery"
@@ -7500,7 +7681,7 @@
       "enclosingSymbolPath": "engageRulesetPrLanding",
       "writer": "store.logEntry",
       "ordinal": 2,
-      "lineHint": 281,
+      "lineHint": 280,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "single-repository merge finalization or fenced merge-failure recovery"
@@ -7520,7 +7701,7 @@
       "enclosingSymbolPath": "engageRulesetPrLanding",
       "writer": "store.logEntry",
       "ordinal": 3,
-      "lineHint": 306,
+      "lineHint": 305,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "single-repository merge finalization or fenced merge-failure recovery"
@@ -7540,7 +7721,7 @@
       "enclosingSymbolPath": "engageRulesetPrLanding",
       "writer": "store.logEntry",
       "ordinal": 4,
-      "lineHint": 315,
+      "lineHint": 314,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "single-repository merge finalization or fenced merge-failure recovery"
@@ -7560,7 +7741,7 @@
       "enclosingSymbolPath": "parkChecksPending",
       "writer": "store.logEntry",
       "ordinal": 1,
-      "lineHint": 348,
+      "lineHint": 347,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "single-repository merge finalization or fenced merge-failure recovery"
@@ -7580,7 +7761,7 @@
       "enclosingSymbolPath": "parkChecksPending",
       "writer": "store.updateTask",
       "ordinal": 1,
-      "lineHint": 341,
+      "lineHint": 340,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "single-repository merge finalization or fenced merge-failure recovery"
@@ -7600,7 +7781,7 @@
       "enclosingSymbolPath": "syncLocalIntegrationRefAfterPrMerge",
       "writer": "store.logEntry",
       "ordinal": 1,
-      "lineHint": 394,
+      "lineHint": 393,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "single-repository merge finalization or fenced merge-failure recovery"
@@ -7620,7 +7801,7 @@
       "enclosingSymbolPath": "syncLocalIntegrationRefAfterPrMerge",
       "writer": "store.logEntry",
       "ordinal": 2,
-      "lineHint": 405,
+      "lineHint": 404,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "single-repository merge finalization or fenced merge-failure recovery"
@@ -7640,7 +7821,7 @@
       "enclosingSymbolPath": "syncLocalIntegrationRefAfterPrMerge",
       "writer": "store.updateTask",
       "ordinal": 1,
-      "lineHint": 412,
+      "lineHint": 411,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "single-repository merge finalization or fenced merge-failure recovery"
@@ -10924,7 +11105,7 @@
       "enclosingSymbolPath": "recoverApprovedStrandedAiMergeCommit>finalized",
       "writer": "finalizeProvenAutoMergeTask",
       "ordinal": 1,
-      "lineHint": 14052,
+      "lineHint": 14218,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -10944,7 +11125,7 @@
       "enclosingSymbolPath": "recoverMergedReviewTasks>finalization",
       "writer": "finalizeProvenAutoMergeTask",
       "ordinal": 1,
-      "lineHint": 12914,
+      "lineHint": 13080,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
