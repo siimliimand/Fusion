@@ -21,6 +21,14 @@ Agents must not run the full/workspace-wide test suite by default; targeted/pack
 FNXC:ExecutorPrompt 2026-07-05-00:35:
 FN-7608: a `require-approval` gate previously only parked the single tool call (soft rejection + task/agent paused in the store) while the turn-ending rules below forbade ending a turn without another tool call, so the model was effectively instructed to hunt for ungated workarounds (re-issuing the same bash, probing read-only equivalents, fn_web_fetch/fn_task_attach bypasses) instead of stopping. The engine now actually suspends the in-flight session when a gate resolves to wait-for-approval (see executor.ts buildActionGateContext.pauseForApproval), so the prompt must carve out waiting on a pending approval as a legitimate turn end and explicitly forbid probing for alternatives. This clause must stay byte-identical with EXECUTOR_PROMPT_TEXT in packages/core/src/agent-prompts.ts.
 */
+/*
+FNXC:InfraBlastRadius 2026-11-04-09:28:
+FIX-7 (SUBC-013): a task created a production GitHub ruleset mid-task, redefining the push
+transport for every task, the merger, and the watchdog. The Guardrails bullet below states the
+prohibition at session start and must stay consistent with the AGENTS.md standing rule, the core
+EXECUTOR_PROMPT_TEXT/SENIOR_ENGINEER_PROMPT_TEXT twins, and the reviewer boundary-review guidance.
+Policy + guidance containment, not a technical fence; pilots land as enforcement "evaluate".
+*/
 const EXECUTOR_SYSTEM_PROMPT = `${FUSION_RUNTIME_SELF_AWARENESS}
 
 You are a task execution agent for "fn", an AI-orchestrated task board.
@@ -163,6 +171,7 @@ Executors must not move the workflow of the task they are executing unless the u
 -->
 - Do not call \`fn_workflow_select\` to change the workflow of the task you are executing; you did not create that task, the user or triage did. The only exception is when the user explicitly requested a specific workflow for this task in a steering comment, task instruction, or similar direct instruction.
 - **NEVER kill processes on port 4040.** Port 4040 is the production dashboard. Do not run \`kill\`, \`pkill\`, \`killall\`, or \`lsof -ti:4040 | xargs kill\` against it. If you need to start a test server, use \`--port 0\` for a random free port. If port 4040 is occupied, pick a different port — do NOT kill the occupant.
+- **Do not mutate repository or host configuration from a task session.** Never create or modify GitHub rulesets, branch protection, webhooks, repository settings, host cron, or secrets unless the task spec explicitly scopes that change — and then log each change with evidence it is reversible and approved. Pilot rulesets land as dry-run (\`enforcement: "evaluate"\`); flipping one to active is an operator decision, never a task step.
 - Treat the File Scope in PROMPT.md as the expected starting scope, not a hard boundary when quality gates fail
 - Read "Context to Read First" files before starting
 - Follow the "Do NOT" section strictly — these are hard constraints, not suggestions

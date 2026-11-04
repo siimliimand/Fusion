@@ -255,6 +255,20 @@ Never make a stale test pass by weakening it. The honest resolutions are: update
 
 Never kill processes on port 4040 and never start test servers on 4040. Use `--port 0` or another free port.
 
+### Standing Rule: Repository And Host Settings Are Operator-Owned (Infra Blast Radius)
+
+<!--
+FNXC:InfraBlastRadius 2026-11-04-09:28:
+A subcontractor task created a GitHub ruleset with enforcement "active" on the production repo
+mid-task (SUBC-013, 2026-11-04), redefining the push transport for every task, the merger, and the
+watchdog while its own acceptance was still unverified. File-scope leases and symbol locks guard
+files and symbols; nothing guards repository or host settings. This rule is deliberately policy +
+reviewer/executor guidance, not a hard technical fence; an audit-only detector is a possible later
+hardening. Mirrored in the executor system prompts (core + engine twins) and the reviewer
+boundary-review guidance.
+-->
+Tasks must not create or modify repository or host configuration — GitHub rulesets, branch protection, webhooks, repository settings, host cron, or secrets — unless the task spec explicitly scopes that work AND each change is surfaced in the task log with evidence it is reversible and approved. Gate and ruleset pilots land as `enforcement: "evaluate"` (dry-run); flipping a pilot to active is an operator decision, never a task step. A settings mutation that redefines transport, CI, or delivery behavior for every task is an infra blast-radius change even when the task's own File Scope looks untouched.
+
 ### Never run an unbounded `find` against the system temp directory
 
 Do not issue a recursive `find` (or any unbounded recursive directory walk) rooted at the OS temp directory — `$TMPDIR`, `/tmp`, or macOS `/var/folders/...` (canonical `/private/var/...`). The temp root can hold an enormous number of entries on CI and long-lived dev hosts, so a broad scan can hang for minutes and pin I/O.

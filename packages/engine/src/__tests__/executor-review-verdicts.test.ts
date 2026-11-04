@@ -578,6 +578,48 @@ describe("Code review verdict enforcement - fn_task_update blocking", () => {
     expect(capturedSystemPrompt).toContain("Task-execution sessions structurally withhold `fn_task_create` and `fn_delegate_task`");
   });
 
+  /*
+   * FNXC:InfraBlastRadius 2026-11-04-09:28:
+   * FIX-7 (SUBC-013): the executor session-start system prompt must prohibit
+   * repository/host settings mutations unless the task spec explicitly scopes them,
+   * consistent with the AGENTS.md standing rule and the reviewer boundary-review
+   * guidance. Asserted through the live capture harness so the resolved prompt
+   * (core default or engine fallback twin) is covered, not just one constant.
+   */
+  it("system prompt prohibits repository/host configuration mutations without explicit spec scope", async () => {
+    let capturedSystemPrompt = "";
+    mockedCreateFnAgent.mockImplementation(async (opts: any) => {
+      capturedSystemPrompt = opts.systemPrompt || "";
+      return {
+        session: {
+          prompt: vi.fn().mockResolvedValue(undefined),
+          dispose: vi.fn(),
+          sessionManager: { getLeafId: vi.fn(), branchWithSummary: vi.fn() },
+          navigateTree: vi.fn(),
+        },
+      } as any;
+    });
+
+    const store = createMockStore();
+    const { executor } = createRoutingExecutor(store);
+    await executor.execute({
+      id: "FN-SYS-INFRA",
+      title: "Test",
+      description: "Test",
+      column: "in-progress",
+      dependencies: [],
+      steps: [],
+      currentStep: 0,
+      log: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    expect(capturedSystemPrompt).toContain("Do not mutate repository or host configuration from a task session");
+    expect(capturedSystemPrompt).toContain("GitHub rulesets, branch protection, webhooks, repository settings, host cron, or secrets");
+    expect(capturedSystemPrompt).toContain('enforcement: "evaluate"');
+  });
+
   // Note: The EXECUTOR_SYSTEM_PROMPT constant is tested indirectly via the buildExecutionPrompt test.
   // The direct test for EXECUTOR_SYSTEM_PROMPT is skipped because of module caching issues in vitest.
   // The buildExecutionPrompt test verifies the CRITICAL language is included in execution prompts.

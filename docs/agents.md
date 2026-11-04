@@ -979,6 +979,15 @@ Planning and re-planning sessions may receive `fn_install_worktree_dependencies`
 
 Pi sessions started in an isolated task worktree reject filesystem paths outside that worktree. The established project-memory and task-attachment exceptions remain unchanged. The standard user Agent Skills root at `~/.agents/skills` is readable from worktree sessions. Separately, when Fusion advertises skill bodies through `AgentOptions.additionalSkillPaths` (including enabled plugin skill roots), it allows only `read`, `glob`, and `grep` to access those exact normalized roots. `write`, `edit`, and Bash working directories remain worktree-bound for skill roots; these are not general `~/.agents` or `~/.fusion/plugins` exceptions.
 
+<!--
+FNXC:InfraBlastRadius 2026-11-04-09:28:
+FIX-7 (SUBC-013): a task created a production GitHub ruleset mid-task, redefining the push
+transport for every task, the merger, and the watchdog. Document the operator-owned repo/host
+settings boundary that the executor system prompts and reviewer guidance now state. This is
+deliberately guidance, not a technical fence.
+-->
+Repository and host settings are operator-owned and sit outside the worktree boundary even though no filesystem guard covers them: executor sessions are instructed not to create or modify GitHub rulesets, branch protection, webhooks, repository settings, host cron, or secrets unless the task spec explicitly scopes the change (and then to log each change with evidence it is reversible and approved), while reviewer guidance treats an unscoped or unevidenced change as a blocking REVISE. Gate and ruleset pilots land as `enforcement: "evaluate"` (dry-run); flipping a pilot to active enforcement is an operator decision, never a task step.
+
 ```bash
 fn message inbox
 fn message outbox

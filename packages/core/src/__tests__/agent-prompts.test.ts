@@ -325,6 +325,39 @@ describe("resolveAgentPrompt", () => {
     expect(result).toContain("attachments");
   });
 
+  /*
+   * FNXC:InfraBlastRadius 2026-11-04-09:28:
+   * FIX-7: both executor prompt variants must state the repository/host settings
+   * prohibition at session start, and both reviewer variants must carry the
+   * boundary-review checklist line (SUBC-013 ruleset incident containment).
+   */
+  it("executor prompt variants prohibit repository/host settings mutations without explicit spec scope", () => {
+    const defaultExecutor = resolveAgentPrompt("executor");
+    const seniorEngineer = resolveAgentPrompt("executor", {
+      roleAssignments: { executor: "senior-engineer" },
+    });
+
+    for (const prompt of [defaultExecutor, seniorEngineer]) {
+      expect(prompt).toContain("Do not mutate repository or host configuration from a task session");
+      expect(prompt).toContain("GitHub rulesets, branch protection, webhooks, repository settings, host cron, or secrets");
+      expect(prompt).toContain('enforcement: "evaluate"');
+    }
+  });
+
+  it("reviewer prompts check for repository/host configuration changes outside the worktree", () => {
+    const defaultReviewer = resolveAgentPrompt("reviewer");
+    const strictReviewer = resolveAgentPrompt("reviewer", {
+      roleAssignments: { reviewer: "strict-reviewer" },
+    });
+
+    for (const prompt of [defaultReviewer, strictReviewer]) {
+      expect(prompt).toContain("rulesets, branch protection, webhooks, cron, secrets");
+      expect(prompt).toContain("reversible and approved");
+    }
+    expect(defaultReviewer).toContain("repository/host configuration outside the");
+    expect(strictReviewer).toContain("Repository/host configuration was changed outside the worktree");
+  });
+
   // ── Task Document Tool Guidance ─────────────────────────────────────────
 
   it("built-in executor prompt includes task_document_write guidance", () => {
