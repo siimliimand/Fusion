@@ -266,6 +266,11 @@ export async function resolveActiveTaskWedgeEpisodeRow(
  * @param firstTransitionOnly Require `deleted_at IS NULL` and report whether this
  *   transaction won the first-transition claim. Archive callers retain their
  *   established unconditional soft-delete behavior.
+ * @param options.clearDispatchOscillation Also null the persisted dispatch-oscillation
+ *   columns (`execute_requeue_loop_count`/`execute_requeue_loop_signature`) in the same
+ *   UPDATE. Used by the archive transition, which owns the scheduler's oscillation reset:
+ *   after the soft-delete the store refuses writes against the row, so the reset must land
+ *   atomically with the deletion, not as a follow-up write.
  */
 export async function softDeleteTaskRowInTransaction(
   tx: DbTransaction,
@@ -274,6 +279,7 @@ export async function softDeleteTaskRowInTransaction(
   allowResurrection = false,
   projectId?: string,
   firstTransitionOnly = false,
+  options?: { clearDispatchOscillation?: boolean },
 ): Promise<boolean> {
   /*
   FNXC:ArchiveProjectIsolation 2026-07-14-16:20:
@@ -290,6 +296,16 @@ export async function softDeleteTaskRowInTransaction(
   would let an archive snapshot commit after a concurrent delete won the row.
   */
   if (firstTransitionOnly) predicates.push(isNull(schema.project.tasks.deletedAt));
+  /*
+  FNXC:SchedulerDispatchOscillation 2026-11-04-10:09 (FIX-10):
+  Only the two requeue-loop columns exist as persisted row columns; `dispatchStormCount` and
+  `lastDispatchAt` are scheduler-owned in-memory task fields with no row representation, and
+  the archive's in-memory clear before `taskToArchiveEntry` covers those for the event payload
+  and the cold-storage snapshot.
+  */
+  const dispatchOscillationClears = options?.clearDispatchOscillation
+    ? { executeRequeueLoopCount: null, executeRequeueLoopSignature: null }
+    : {};
   const claimed = await tx
     .update(schema.project.tasks)
     .set({
@@ -302,6 +318,7 @@ export async function softDeleteTaskRowInTransaction(
       deletedAt,
       allowResurrection: allowResurrection ? 1 : 0,
       updatedAt: deletedAt,
+      ...dispatchOscillationClears,
     })
     .where(and(...predicates))
     .returning({ id: schema.project.tasks.id });

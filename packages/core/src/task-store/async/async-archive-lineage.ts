@@ -240,7 +240,7 @@ export async function archiveParentTaskWithLineageGate(
   layer: AsyncDataLayer,
   taskId: string,
   entry: ArchivedTaskEntry,
-  options: { removeLineageReferences?: boolean; now?: string; beforeArchive?: (tx: DbTransaction) => Promise<void>; beforeLineageGate?: () => void | Promise<void>; archivedColumns?: ReadonlySet<string>; revalidateAgainst?: readonly string[]; promptByChildId?: ReadonlyMap<string, string>; evidenceTargetVersionForTest?: (childId: string, computed: number, attempt: number) => number; livenessWipLanes?: ReadonlySet<string> } = {},
+  options: { removeLineageReferences?: boolean; now?: string; beforeArchive?: (tx: DbTransaction) => Promise<void>; beforeLineageGate?: () => void | Promise<void>; archivedColumns?: ReadonlySet<string>; revalidateAgainst?: readonly string[]; promptByChildId?: ReadonlyMap<string, string>; evidenceTargetVersionForTest?: (childId: string, computed: number, attempt: number) => number; livenessWipLanes?: ReadonlySet<string>; clearDispatchOscillation?: boolean } = {},
 
 ): Promise<{ archived: true; lineageOutcome?: LineageRemovalOutcome } | { archived: false; liveChildIds: string[] } | { archived: false; liveVerdict: ArchiveLivenessVerdict }> {
   const now = options.now ?? new Date().toISOString();
@@ -302,7 +302,12 @@ export async function archiveParentTaskWithLineageGate(
     //    so the UPDATE participates in this transaction. The previous call used
     //    softDeleteTaskRow(layer) which bound layer.db and ran OUTSIDE the txn,
     //    breaking atomicity (a later rollback left the soft-delete persisted).
-    await softDeleteTaskRowInTransaction(tx, taskId, now, false, layer.projectId);
+    //
+    //    FNXC:SchedulerDispatchOscillation 2026-11-04-10:09 (FIX-10): the archived
+    //    transition owns the scheduler's oscillation reset and clears the persisted
+    //    requeue-loop columns in this same UPDATE — after the soft-delete the store
+    //    refuses writes against the row, so a follow-up reset can never land.
+    await softDeleteTaskRowInTransaction(tx, taskId, now, false, layer.projectId, false, { clearDispatchOscillation: options.clearDispatchOscillation === true });
 
     // Preserve the public legacy success shape for direct callers; only the serialized boundary
     // supplies revalidation and needs the actual-clear outcome for post-commit reconciliation.

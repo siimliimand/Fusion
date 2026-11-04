@@ -460,6 +460,23 @@ export async function deleteTaskIfBackendImpl(
 }
 
 
+/**
+ * FNXC:SchedulerDispatchOscillation 2026-11-04-10:09 (FIX-10):
+ * Null the scheduler-owned dispatch-oscillation fields on an in-memory task object. The
+ * archived transition runs this before building the cold-storage snapshot, so the archive
+ * entry and the `task:moved` event payload carry no oscillation state: the scheduler's
+ * post-move reset (which cannot write against the soft-deleted row) has nothing left to do,
+ * and lineage restores never resurrect stale dispatch bookkeeping. Mirrors the null-clear
+ * semantics of `updateTask` ({ value: null } → undefined on the task object).
+ */
+function clearTaskDispatchOscillationState(task: Task): void {
+  task.dispatchStormCount = undefined;
+  task.lastDispatchAt = undefined;
+  task.executeRequeueLoopCount = undefined;
+  task.executeRequeueLoopSignature = undefined;
+}
+
+
 /*
 FNXC:WorkflowResolvedColumns 2026-07-30-18:20 (batch-core):
 The archived lanes for one task, resolved from its own workflow. Shared by the archive and unarchive
@@ -504,6 +521,20 @@ export async function archiveTaskBackendImpl(store: TaskStore, id: string, optio
     const fromColumn = task.column as Column;
     const archivedAt = new Date().toISOString();
 
+    /*
+    FNXC:SchedulerDispatchOscillation 2026-11-04-10:09 (FIX-10):
+    The archived transition owns the scheduler's dispatch-oscillation reset. The scheduler's
+    task:moved handler cannot perform it after this move — the store refuses reads/writes
+    against the soft-deleted row (journal 2026-11-03: "Failed to reset dispatch oscillation
+    state for SUBC-007 on move to archived: Task SUBC-007 is soft-deleted ..."). Clearing the
+    fields HERE, before the snapshot is built, does three things: the emitted task:moved
+    payload carries no reset work for the scheduler to attempt (so no failed-write warning),
+    the cold-storage snapshot is clean so a lineage restore never resurrects stale
+    oscillation state, and the soft-delete UPDATE (clearDispatchOscillation) nulls the
+    persisted requeue-loop columns atomically with the deletion.
+    */
+    clearTaskDispatchOscillationState(task);
+
     // Build the archive entry for cold storage.
     const entry = await store.taskToArchiveEntry(task, archivedAt);
 
@@ -527,6 +558,7 @@ export async function archiveTaskBackendImpl(store: TaskStore, id: string, optio
           removeLineageReferences: removeLineageRefs,
           now: archivedAt,
           archivedColumns: archiveLineageArchivedLanes,
+          clearDispatchOscillation: true,
           ...(livenessWipLanes ? {livenessWipLanes} : {}),
           ...(context ? {
             revalidateAgainst: context.candidateIds,
