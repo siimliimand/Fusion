@@ -136,6 +136,7 @@ import { resolveWorkspaceMergeReadiness } from "./workspace-merge-readiness.js";
 import { persistWorkspaceRepoLandFailure } from "./workspace-land-failure.js";
 import { ensureTenancyFenceRef, mergeDispatchFenceRef, publishWorkspaceIntegrationRef, WorkspaceFenceRefError, workspaceLandFenceRef } from "./workspace-fence-ref.js";
 import { isPushAfterMergeEnabled } from "./push-after-merge-policy.js";
+import { engageRulesetPrLanding, isRulesetPushRejection } from "./ruleset-pr-landing.js";
 import { resolveWorkspaceIntegrationTarget, WorkspaceEnvironmentError, WorkspaceIntegrationTargetError, type WorkspaceIntegrationTarget } from "./workspace-integration-target.js";
 import { finalizeProvenAutoMergeTask } from "./auto-merge-finalization.js";
 import { getCommitTaskOwnership, detectAlreadyLandedOnMain } from "./already-merged-detector.js";
@@ -2206,6 +2207,8 @@ async function runPushAfterMergeStep(input: {
         targetBranch: pushOutcome.targetBranch,
         outcome: pushOutcome.pushed ? "success" : "failed",
         refAdvanced: pushOutcome.refAdvanced,
+        ...(pushOutcome.prLanded ? { landedVia: "pr-ruleset-fallback" } : {}),
+        ...(pushOutcome.prChecksPending ? { reason: "pr-checks-pending" } : {}),
         ...(pushOutcome.error ? { stderrPreview: pushOutcome.error.slice(0, 500) } : {}),
       },
     }).catch(() => undefined);
@@ -2213,21 +2216,39 @@ async function runPushAfterMergeStep(input: {
       await log(`Push after merge: pushed ${integrationBranch} to ${pushOutcome.remote}/${pushOutcome.targetBranch}`);
       // A divergence rebase rewrote the landed squash — refresh the recorded
       // commitSha/stats so mergeDetails don't reference an orphaned commit
-      // (mirrors the legacy post-push refresh).
-      if (pushOutcome.refAdvanced && pushOutcome.rebasedSha) {
+      // (mirrors the legacy post-push refresh). The ruleset PR fallback lands the same way:
+      // the squash-merged PR tip is a NEW commit, so the recorded landing must point at the
+      // reachable post-merge tip instead of the sibling local squash.
+      if ((pushOutcome.refAdvanced || pushOutcome.prLanded) && pushOutcome.rebasedSha) {
         try {
           const latest = await store.getTask(taskId).catch(() => null);
           const details = latest?.mergeDetails;
           if (details?.commitSha && details.commitSha !== pushOutcome.rebasedSha) {
             const { filesChanged, insertions, deletions } = await captureSingleCommitLandedMetadata(projectRootDir, pushOutcome.rebasedSha);
             await fence.write("lifecycle", () => store.updateTask(taskId, {
-              mergeDetails: { ...details, commitSha: pushOutcome.rebasedSha, filesChanged, insertions, deletions },
+              mergeDetails: {
+                ...details,
+                commitSha: pushOutcome.rebasedSha,
+                ...(pushOutcome.prLanded && pushOutcome.prNumber ? { prNumber: pushOutcome.prNumber } : {}),
+                filesChanged,
+                insertions,
+                deletions,
+              },
             }));
           }
         } catch (refreshErr: unknown) {
           aiMergeLog.warn(`${taskId}: post-push mergeDetails refresh failed: ${getErrorMessage(refreshErr)}`);
         }
       }
+    } else if (pushOutcome.prChecksPending) {
+      /*
+      FNXC:RulesetPrLanding 2026-11-04-09:42:
+      The bounded checks wait timed out. The honest park (PR CHECKS PENDING marker +
+      mergeDetails.prLanding) was already written by the fallback engagement; deliberately skip the
+      generic "task finalized anyway; local main may diverge" failure entry, because the PR path
+      (not direct delivery) now owns the remaining delivery and the local ref was NOT advanced.
+      */
+      aiMergeLog.warn(`${taskId}: ruleset PR fallback checks pending: ${pushOutcome.error}`);
     } else {
       aiMergeLog.warn(`${taskId}: push to remote failed: ${pushOutcome.error}`);
       await fence.write("log", () => store.logEntry(
@@ -3668,7 +3689,7 @@ export async function pushAfterMergeToRemote(input: {
   onAgentText?: (delta: string) => void;
   onSession?: (session: { dispose: () => void }) => void;
   fence?: MergeWriteFence;
-}): Promise<{ pushed: boolean; remote?: string; targetBranch?: string; refAdvanced?: boolean; rebasedSha?: string; error?: string }> {
+}): Promise<{ pushed: boolean; remote?: string; targetBranch?: string; refAdvanced?: boolean; rebasedSha?: string; error?: string; prLanded?: boolean; prChecksPending?: boolean; prNumber?: number }> {
   const { store, projectRootDir, taskId, settings, integrationBranch, audit, log, signal } = input;
   // FNXC:MergeReliability 2026-08-11-22:17: Post-push recovery diagnostics can outlive
   // cancellation, so direct callers construct the same per-generation write fence.
@@ -3712,6 +3733,66 @@ export async function pushAfterMergeToRemote(input: {
   } catch (err: unknown) {
     if (isMergeAbortedError(err)) throw err;
     fastPathError = getErrorMessage(err);
+  }
+  /*
+  FNXC:RulesetPrLanding 2026-11-04-09:42:
+  FIX-6 (SUBC-013): a ruleset with required checks on the target branch declines EVERY direct
+  landing push ("push declined due to repository rule violations"). This check MUST precede the
+  non-fast-forward classification below — the rejection output also contains "failed to push some
+  refs", so without this interception the ruleset case would enter the divergence clean room,
+  get declined again, and end in the non-fatal push-failure path with origin permanently behind
+  local main. The fallback lands through a PR (task-branch head → target base, bounded checks
+  wait, squash-merge) and syncs the local integration ref inside this landing's write fence.
+
+  Scope exclusion: this function is the SINGLE-REPOSITORY publication step only — workspace lands
+  keep their per-repository machinery (landOneRepo publishToRemote) and `mergeStrategy:
+  "pull-request"` (`merging-pr`) tasks never reach push-after-merge, so both keep their existing
+  machinery untouched. autoMerge:false keeps the existing PR-review contract: publishLanding only
+  publishes manual merges or auto-merge-eligible cards, so a PR created here is authorized by the
+  same gate that would have direct-pushed.
+  */
+  if (isRulesetPushRejection(fastPathError)) {
+    const autoSyncMode = normalizeMergeAdvanceAutoSyncMode(settings.mergeAdvanceAutoSync);
+    const prOutcome = await engageRulesetPrLanding({
+      store,
+      projectRootDir,
+      taskId,
+      remote,
+      targetBranch,
+      integrationBranch,
+      landingSha: localSha,
+      expectedLocalRefSha: localSha,
+      rejectionMessage: fastPathError,
+      audit,
+      fence,
+      signal,
+      syncCheckouts: autoSyncMode === "off"
+        ? undefined
+        : ({ previousSha, newSha }) => runMergeAdvanceAutoSync({
+          store,
+          audit,
+          taskId,
+          projectRootDir,
+          integrationBranch,
+          previousSha,
+          newSha,
+          mode: autoSyncMode,
+        }),
+    });
+    if (prOutcome.outcome === "landed") {
+      // refAdvanced=true drives the caller's existing post-push mergeDetails refresh, which
+      // reconciles commitSha/stats to prOutcome.newMainSha (the squash sha is a new commit —
+      // the recorded landing must point at the reachable post-merge tip, not the sibling local
+      // squash that no longer sits on main).
+      return { pushed: true, remote, targetBranch, prLanded: true, refAdvanced: true, rebasedSha: prOutcome.newMainSha, prNumber: prOutcome.prNumber };
+    }
+    if (prOutcome.outcome === "checks-timeout") {
+      // Honest-blocked park already written (PR CHECKS PENDING marker + mergeDetails.prLanding).
+      return { pushed: false, remote, targetBranch, prChecksPending: true, error: prOutcome.error };
+    }
+    // Fallback failed: keep the existing non-fatal push-failure contract with the ORIGINAL
+    // rejection — that is the load-bearing fact for the operator and the next retry.
+    return { pushed: false, remote, targetBranch, error: fastPathError };
   }
   if (!isNonFastForwardPushError(fastPathError)) {
     return { pushed: false, remote, targetBranch, error: fastPathError };
@@ -3778,15 +3859,66 @@ export async function pushAfterMergeToRemote(input: {
       registeredPaths.add(canonicalPushRoot);
     }
 
+    /*
+    FNXC:RulesetPrLanding 2026-11-04-09:42:
+    FIX-6: the clean-room rebase push can also be declined by a ruleset (genuine divergence AND
+    ruleset protection). Supply the same PR fallback: the landing sha is the clean-room HEAD (the
+    rebased squash), while the local sync and PR flow run against the canonical project root.
+    */
+    const cleanRoomPrFence = input.fence ?? createMergeWriteFence({ taskId, signal });
+    const cleanRoomRulesetPrFallback = async ({ remote: fallbackRemote, branch: fallbackBranch, rejection }: { remote: string; branch: string; rejection: string }) => {
+      const cleanRoomLandingSha = await git(["rev-parse", "HEAD"], canonicalPushRoot).catch(() => "");
+      if (!cleanRoomLandingSha) {
+        return { outcome: "failed" as const, error: rejection };
+      }
+      const fallbackAutoSyncMode = normalizeMergeAdvanceAutoSyncMode(settings.mergeAdvanceAutoSync);
+      const prOutcome = await engageRulesetPrLanding({
+        store,
+        projectRootDir,
+        taskId,
+        remote: fallbackRemote,
+        targetBranch: fallbackBranch,
+        integrationBranch,
+        landingSha: cleanRoomLandingSha,
+        expectedLocalRefSha: localSha,
+        rejectionMessage: rejection,
+        audit,
+        fence: cleanRoomPrFence,
+        signal,
+        syncCheckouts: fallbackAutoSyncMode === "off"
+          ? undefined
+          : ({ previousSha, newSha }) => runMergeAdvanceAutoSync({
+            store,
+            audit,
+            taskId,
+            projectRootDir,
+            integrationBranch,
+            previousSha,
+            newSha,
+            mode: fallbackAutoSyncMode,
+          }),
+      });
+      return { outcome: prOutcome.outcome, newMainSha: prOutcome.newMainSha, prNumber: prOutcome.prNumber, error: prOutcome.error };
+    };
     const pushResult = await pushToRemoteAfterMerge(store, canonicalPushRoot, taskId, settings, {
       integrationBranch: targetBranch,
       pushHeadRefspec: true,
       signal,
       onAgentText: input.onAgentText,
       onSession: input.onSession,
+      rulesetPrFallback: cleanRoomRulesetPrFallback,
     });
     if (!pushResult.pushed) {
-      return { pushed: false, remote, targetBranch, error: pushResult.error };
+      return { pushed: false, remote, targetBranch, prChecksPending: pushResult.prChecksPending, error: pushResult.error };
+    }
+    if (pushResult.prLandedMainSha) {
+      /*
+      FNXC:RulesetPrLanding 2026-11-04-09:42:
+      The ruleset PR fallback already delivered the rebased squash through a PR and advanced the
+      local integration ref to the post-merge tip. The clean-room HEAD sha is NOT on the remote —
+      skip this path's own rebasedSha advance, which would CAS a wrong sibling onto the ref.
+      */
+      return { pushed: true, remote, targetBranch, prLanded: true, refAdvanced: true, rebasedSha: pushResult.prLandedMainSha, prNumber: pushResult.prNumber };
     }
 
     // The approved content is now on the target branch, so clean up the

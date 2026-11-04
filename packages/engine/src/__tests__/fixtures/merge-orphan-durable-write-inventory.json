@@ -197,6 +197,7 @@
     "packages/engine/src/merge/pre-merge-gate-reseed.ts",
     "packages/engine/src/merge/push-after-merge-policy.ts",
     "packages/engine/src/merge/recover-confirmed-merge-push.ts",
+    "packages/engine/src/merge/ruleset-pr-landing.ts",
     "packages/engine/src/merge/stale-content-park.ts",
     "packages/engine/src/merge/stale-content-review-reroute.ts",
     "packages/engine/src/merge/workspace-fence-ref.ts",
@@ -6013,7 +6014,7 @@
       "enclosingSymbolPath": "finalizeMerged",
       "writer": "store.recordBranchGroupMemberLanded",
       "ordinal": 1,
-      "lineHint": 4041,
+      "lineHint": 4173,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "mid-review",
@@ -6035,7 +6036,7 @@
       "enclosingSymbolPath": "finalizeMerged",
       "writer": "store.updateTask",
       "ordinal": 1,
-      "lineHint": 3935,
+      "lineHint": 4067,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "pre-land",
@@ -6059,7 +6060,7 @@
       "enclosingSymbolPath": "finalizeMerged",
       "writer": "store.updateTask",
       "ordinal": 2,
-      "lineHint": 3955,
+      "lineHint": 4087,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "pre-land",
@@ -6083,7 +6084,7 @@
       "enclosingSymbolPath": "finalizeMerged",
       "writer": "store.upsertTaskCommitAssociation",
       "ordinal": 1,
-      "lineHint": 3940,
+      "lineHint": 4072,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "pre-land",
@@ -6107,7 +6108,7 @@
       "enclosingSymbolPath": "finalizeMerged",
       "writer": "syncGroupPrOnLanding",
       "ordinal": 1,
-      "lineHint": 4052,
+      "lineHint": 4184,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -6127,7 +6128,7 @@
       "enclosingSymbolPath": "finalizeTask",
       "writer": "store.emit",
       "ordinal": 1,
-      "lineHint": 4139,
+      "lineHint": 4271,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "pre-land",
@@ -6151,7 +6152,7 @@
       "enclosingSymbolPath": "finalizeTask>finalization",
       "writer": "finalizeProvenAutoMergeTask",
       "ordinal": 1,
-      "lineHint": 4094,
+      "lineHint": 4226,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -6171,7 +6172,7 @@
       "enclosingSymbolPath": "finalizeWorkspaceTask",
       "writer": "store.logEntry",
       "ordinal": 1,
-      "lineHint": 3411,
+      "lineHint": 3432,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "pre-land",
@@ -6195,7 +6196,7 @@
       "enclosingSymbolPath": "finalizeWorkspaceTask",
       "writer": "store.logEntry",
       "ordinal": 2,
-      "lineHint": 3413,
+      "lineHint": 3434,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "pre-land",
@@ -6219,7 +6220,7 @@
       "enclosingSymbolPath": "finalizeWorkspaceTask",
       "writer": "store.logEntry",
       "ordinal": 3,
-      "lineHint": 3436,
+      "lineHint": 3457,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "pre-land",
@@ -6243,7 +6244,7 @@
       "enclosingSymbolPath": "finalizeWorkspaceTask",
       "writer": "store.logEntry",
       "ordinal": 4,
-      "lineHint": 3438,
+      "lineHint": 3459,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "pre-land",
@@ -6267,7 +6268,7 @@
       "enclosingSymbolPath": "finalizeWorkspaceTask",
       "writer": "store.updateTask",
       "ordinal": 1,
-      "lineHint": 3386,
+      "lineHint": 3407,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "pre-land",
@@ -6291,7 +6292,7 @@
       "enclosingSymbolPath": "finalizeWorkspaceTask>cleanup",
       "writer": "store.logEntry",
       "ordinal": 1,
-      "lineHint": 3401,
+      "lineHint": 3422,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "pre-land",
@@ -6315,7 +6316,7 @@
       "enclosingSymbolPath": "finalizeWorkspaceTask>cleanup",
       "writer": "store.logEntry",
       "ordinal": 2,
-      "lineHint": 3403,
+      "lineHint": 3424,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "pre-land",
@@ -6339,7 +6340,7 @@
       "enclosingSymbolPath": "landOneRepo",
       "writer": "store.recordWorkspaceLandIntent",
       "ordinal": 1,
-      "lineHint": 1310,
+      "lineHint": 1311,
       "owningEntryPoint": "landOneRepo",
       "reachableDataStates": [
         "pre-land"
@@ -6359,7 +6360,7 @@
       "enclosingSymbolPath": "landOneRepo",
       "writer": "store.updateTask",
       "ordinal": 1,
-      "lineHint": 1347,
+      "lineHint": 1348,
       "owningEntryPoint": "landOneRepo",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -6379,7 +6380,7 @@
       "enclosingSymbolPath": "landWorkspaceTask",
       "writer": "store.logEntry",
       "ordinal": 1,
-      "lineHint": 3211,
+      "lineHint": 3232,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "pre-land",
@@ -6403,7 +6404,7 @@
       "enclosingSymbolPath": "landWorkspaceTask",
       "writer": "store.releaseWorkspaceLease",
       "ordinal": 1,
-      "lineHint": 2932,
+      "lineHint": 2953,
       "owningEntryPoint": "landWorkspaceTask",
       "reachableDataStates": [
         "workspace-partial-land",
@@ -6424,7 +6425,7 @@
       "enclosingSymbolPath": "landWorkspaceTask",
       "writer": "store.releaseWorkspaceLease",
       "ordinal": 2,
-      "lineHint": 2960,
+      "lineHint": 2981,
       "owningEntryPoint": "landWorkspaceTask",
       "reachableDataStates": [
         "workspace-partial-land",
@@ -6445,7 +6446,7 @@
       "enclosingSymbolPath": "landWorkspaceTask",
       "writer": "store.releaseWorkspaceLease",
       "ordinal": 3,
-      "lineHint": 3161,
+      "lineHint": 3182,
       "owningEntryPoint": "landWorkspaceTask",
       "reachableDataStates": [
         "workspace-partial-land",
@@ -6466,7 +6467,7 @@
       "enclosingSymbolPath": "landWorkspaceTask",
       "writer": "store.updateTask",
       "ordinal": 1,
-      "lineHint": 2691,
+      "lineHint": 2712,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "pre-land",
@@ -6490,7 +6491,7 @@
       "enclosingSymbolPath": "landWorkspaceTask",
       "writer": "store.updateTask",
       "ordinal": 2,
-      "lineHint": 3208,
+      "lineHint": 3229,
       "owningEntryPoint": "landWorkspaceTask",
       "reachableDataStates": [
         "pre-land",
@@ -6512,7 +6513,7 @@
       "enclosingSymbolPath": "landWorkspaceTask>log",
       "writer": "store.appendAgentLog",
       "ordinal": 1,
-      "lineHint": 2522,
+      "lineHint": 2543,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "pre-land",
@@ -6536,7 +6537,7 @@
       "enclosingSymbolPath": "landWorkspaceTask>log",
       "writer": "store.logEntry",
       "ordinal": 1,
-      "lineHint": 2521,
+      "lineHint": 2542,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "pre-land",
@@ -6560,7 +6561,7 @@
       "enclosingSymbolPath": "landWorkspaceTask>resolved",
       "writer": "store.resolveWorkspaceLandIntent",
       "ordinal": 1,
-      "lineHint": 3046,
+      "lineHint": 3067,
       "owningEntryPoint": "landWorkspaceTask",
       "reachableDataStates": [
         "post-ref-advance"
@@ -6580,7 +6581,7 @@
       "enclosingSymbolPath": "mergeAndReview>assertCurrentEpisodeIdentity",
       "writer": "store.updateTaskAtomic",
       "ordinal": 1,
-      "lineHint": 3483,
+      "lineHint": 3504,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "mid-review"
@@ -6600,7 +6601,7 @@
       "enclosingSymbolPath": "mergeAndReview>persistState",
       "writer": "store.updateTaskAtomic",
       "ordinal": 1,
-      "lineHint": 3464,
+      "lineHint": 3485,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "mid-review"
@@ -6620,7 +6621,7 @@
       "enclosingSymbolPath": "persistRepoLandedSha",
       "writer": "store.updateTask",
       "ordinal": 1,
-      "lineHint": 3316,
+      "lineHint": 3337,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "pre-land",
@@ -6644,7 +6645,7 @@
       "enclosingSymbolPath": "pushAfterMergeToRemote>recordRecoveryBranch",
       "writer": "store.logEntry",
       "ordinal": 1,
-      "lineHint": 3739,
+      "lineHint": 3820,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "pre-land",
@@ -6668,7 +6669,7 @@
       "enclosingSymbolPath": "recoverApprovedPreexistingAiMergeWorktree",
       "writer": "store.updateTask",
       "ordinal": 1,
-      "lineHint": 379,
+      "lineHint": 380,
       "owningEntryPoint": "landOneRepo",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -6688,7 +6689,7 @@
       "enclosingSymbolPath": "recoverApprovedPreexistingAiMergeWorktree",
       "writer": "store.updateTask",
       "ordinal": 2,
-      "lineHint": 385,
+      "lineHint": 386,
       "owningEntryPoint": "landOneRepo",
       "reachableDataStates": [
         "pre-land",
@@ -6709,7 +6710,7 @@
       "enclosingSymbolPath": "runAiMerge",
       "writer": "store.logEntry",
       "ordinal": 1,
-      "lineHint": 1761,
+      "lineHint": 1762,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "pre-land",
@@ -6733,7 +6734,7 @@
       "enclosingSymbolPath": "runAiMerge",
       "writer": "store.logEntry",
       "ordinal": 2,
-      "lineHint": 1951,
+      "lineHint": 1952,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "pre-land",
@@ -6757,7 +6758,7 @@
       "enclosingSymbolPath": "runAiMerge",
       "writer": "store.logEntry",
       "ordinal": 3,
-      "lineHint": 2016,
+      "lineHint": 2017,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "pre-land",
@@ -6781,7 +6782,7 @@
       "enclosingSymbolPath": "runAiMerge",
       "writer": "store.logEntry",
       "ordinal": 4,
-      "lineHint": 2087,
+      "lineHint": 2088,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "single-repository merge finalization or fenced merge-failure recovery"
@@ -6801,7 +6802,7 @@
       "enclosingSymbolPath": "runAiMerge",
       "writer": "store.logEntry",
       "ordinal": 5,
-      "lineHint": 2143,
+      "lineHint": 2144,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "single-repository merge finalization or fenced merge-failure recovery"
@@ -6821,7 +6822,7 @@
       "enclosingSymbolPath": "runAiMerge",
       "writer": "store.updateTask",
       "ordinal": 1,
-      "lineHint": 1755,
+      "lineHint": 1756,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "pre-land",
@@ -6845,7 +6846,7 @@
       "enclosingSymbolPath": "runAiMerge",
       "writer": "store.updateTask",
       "ordinal": 2,
-      "lineHint": 1945,
+      "lineHint": 1946,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "pre-land",
@@ -6869,7 +6870,7 @@
       "enclosingSymbolPath": "runAiMerge",
       "writer": "store.updateTask",
       "ordinal": 3,
-      "lineHint": 2010,
+      "lineHint": 2011,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "pre-land",
@@ -6893,7 +6894,7 @@
       "enclosingSymbolPath": "runAiMerge",
       "writer": "store.updateTask",
       "ordinal": 4,
-      "lineHint": 2081,
+      "lineHint": 2082,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "single-repository merge finalization or fenced merge-failure recovery"
@@ -6913,7 +6914,7 @@
       "enclosingSymbolPath": "runAiMerge>log",
       "writer": "store.appendAgentLog",
       "ordinal": 1,
-      "lineHint": 1676,
+      "lineHint": 1677,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "pre-land",
@@ -6937,7 +6938,7 @@
       "enclosingSymbolPath": "runAiMerge>log",
       "writer": "store.logEntry",
       "ordinal": 1,
-      "lineHint": 1675,
+      "lineHint": 1676,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "pre-land",
@@ -6961,7 +6962,7 @@
       "enclosingSymbolPath": "runPushAfterMergeStep",
       "writer": "store.logEntry",
       "ordinal": 1,
-      "lineHint": 2233,
+      "lineHint": 2254,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "pre-land",
@@ -6985,7 +6986,7 @@
       "enclosingSymbolPath": "runPushAfterMergeStep",
       "writer": "store.logEntry",
       "ordinal": 2,
-      "lineHint": 2254,
+      "lineHint": 2275,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "pre-land",
@@ -7009,7 +7010,7 @@
       "enclosingSymbolPath": "runPushAfterMergeStep",
       "writer": "store.logEntry",
       "ordinal": 3,
-      "lineHint": 2266,
+      "lineHint": 2287,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "pre-land",
@@ -7033,7 +7034,7 @@
       "enclosingSymbolPath": "runPushAfterMergeStep",
       "writer": "store.updateTask",
       "ordinal": 1,
-      "lineHint": 2223,
+      "lineHint": 2228,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "pre-land",
@@ -7057,7 +7058,7 @@
       "enclosingSymbolPath": "writeTransientMergeStatus",
       "writer": "store.updateTask",
       "ordinal": 1,
-      "lineHint": 222,
+      "lineHint": 223,
       "owningEntryPoint": "runAiMerge",
       "reachableDataStates": [
         "pre-land",
@@ -7473,6 +7474,186 @@
       "followUpTaskId": "none:no-follow-up-required"
     },
     {
+      "callSiteId": "packages/engine/src/merge/ruleset-pr-landing.ts::engageRulesetPrLanding::store.logEntry::#1",
+      "callSiteFingerprint": "store.logEntry(taskId,`Push to ${remote}/${targetBranch} was declined by repository rules — engaging PR landing fallback (head ${headBranch} →,\"RulesetPrLanding\")",
+      "file": "packages/engine/src/merge/ruleset-pr-landing.ts",
+      "enclosingSymbolPath": "engageRulesetPrLanding",
+      "writer": "store.logEntry",
+      "ordinal": 1,
+      "lineHint": 222,
+      "owningEntryPoint": "runAiMerge",
+      "reachableDataStates": [
+        "single-repository merge finalization or fenced merge-failure recovery"
+      ],
+      "axis1": "checkpoint-covered",
+      "axis1Evidence": "FIX-6 routes every PR-fallback task write through the caller's per-generation merge write fence (fence.write); the checks-pending park and landed stamp re-read the live task immediately before writing.",
+      "axis2Provisional": "must-be-fenced",
+      "axis2Final": "already-fenced",
+      "observedInSuite": "merger-ruleset-pr-landing.test.ts: PR landing, checks-timeout park, and fallback-failure runs all engage",
+      "executionProof": "static:per-call-site merge write fence or ownership checkpoint",
+      "followUpTaskId": "none:no-follow-up-required"
+    },
+    {
+      "callSiteId": "packages/engine/src/merge/ruleset-pr-landing.ts::engageRulesetPrLanding::store.logEntry::#2",
+      "callSiteFingerprint": "store.logEntry(taskId,`PR landing fallback stopped: required checks failed on ${prUrl || headBranch}`,\"RulesetPrLandingFailed\")",
+      "file": "packages/engine/src/merge/ruleset-pr-landing.ts",
+      "enclosingSymbolPath": "engageRulesetPrLanding",
+      "writer": "store.logEntry",
+      "ordinal": 2,
+      "lineHint": 281,
+      "owningEntryPoint": "runAiMerge",
+      "reachableDataStates": [
+        "single-repository merge finalization or fenced merge-failure recovery"
+      ],
+      "axis1": "checkpoint-covered",
+      "axis1Evidence": "FIX-6 routes every PR-fallback task write through the caller's per-generation merge write fence (fence.write); the checks-pending park and landed stamp re-read the live task immediately before writing.",
+      "axis2Provisional": "must-be-fenced",
+      "axis2Final": "already-fenced",
+      "observedInSuite": "merger-ruleset-pr-landing.test.ts: failing checks stop the fallback before the squash-merge",
+      "executionProof": "static:per-call-site merge write fence or ownership checkpoint",
+      "followUpTaskId": "none:no-follow-up-required"
+    },
+    {
+      "callSiteId": "packages/engine/src/merge/ruleset-pr-landing.ts::engageRulesetPrLanding::store.logEntry::#3",
+      "callSiteFingerprint": "store.logEntry(taskId,`PR landing fallback merged ${prUrl || headBranch} (squash) — ${targetBranch} advanced to ${sync.newMainSha || \"(unresol,\"RulesetPrLanding\")",
+      "file": "packages/engine/src/merge/ruleset-pr-landing.ts",
+      "enclosingSymbolPath": "engageRulesetPrLanding",
+      "writer": "store.logEntry",
+      "ordinal": 3,
+      "lineHint": 306,
+      "owningEntryPoint": "runAiMerge",
+      "reachableDataStates": [
+        "single-repository merge finalization or fenced merge-failure recovery"
+      ],
+      "axis1": "checkpoint-covered",
+      "axis1Evidence": "FIX-6 routes every PR-fallback task write through the caller's per-generation merge write fence (fence.write); the checks-pending park and landed stamp re-read the live task immediately before writing.",
+      "axis2Provisional": "must-be-fenced",
+      "axis2Final": "already-fenced",
+      "observedInSuite": "merger-ruleset-pr-landing.test.ts: PR landing and concurrent-advance runs merge the PR",
+      "executionProof": "static:per-call-site merge write fence or ownership checkpoint",
+      "followUpTaskId": "none:no-follow-up-required"
+    },
+    {
+      "callSiteId": "packages/engine/src/merge/ruleset-pr-landing.ts::engageRulesetPrLanding::store.logEntry::#4",
+      "callSiteFingerprint": "store.logEntry(taskId,`PR landing fallback failed: ${message}`,\"RulesetPrLandingFailed\")",
+      "file": "packages/engine/src/merge/ruleset-pr-landing.ts",
+      "enclosingSymbolPath": "engageRulesetPrLanding",
+      "writer": "store.logEntry",
+      "ordinal": 4,
+      "lineHint": 315,
+      "owningEntryPoint": "runAiMerge",
+      "reachableDataStates": [
+        "single-repository merge finalization or fenced merge-failure recovery"
+      ],
+      "axis1": "checkpoint-covered",
+      "axis1Evidence": "FIX-6 routes every PR-fallback task write through the caller's per-generation merge write fence (fence.write); the checks-pending park and landed stamp re-read the live task immediately before writing.",
+      "axis2Provisional": "must-be-fenced",
+      "axis2Final": "already-fenced",
+      "observedInSuite": "merger-ruleset-pr-landing.test.ts: PR-create failure keeps the non-fatal push-failure contract",
+      "executionProof": "static:per-call-site merge write fence or ownership checkpoint",
+      "followUpTaskId": "none:no-follow-up-required"
+    },
+    {
+      "callSiteId": "packages/engine/src/merge/ruleset-pr-landing.ts::parkChecksPending::store.logEntry::#1",
+      "callSiteFingerprint": "store.logEntry(taskId,`${marker} — required checks did not report within the bounded wait (${RULESET_PR_CHECKS_TIMEOUT_MS / 60000} min). The P,\"RulesetPrLanding\")",
+      "file": "packages/engine/src/merge/ruleset-pr-landing.ts",
+      "enclosingSymbolPath": "parkChecksPending",
+      "writer": "store.logEntry",
+      "ordinal": 1,
+      "lineHint": 348,
+      "owningEntryPoint": "runAiMerge",
+      "reachableDataStates": [
+        "single-repository merge finalization or fenced merge-failure recovery"
+      ],
+      "axis1": "checkpoint-covered",
+      "axis1Evidence": "FIX-6 routes every PR-fallback task write through the caller's per-generation merge write fence (fence.write); the checks-pending park and landed stamp re-read the live task immediately before writing.",
+      "axis2Provisional": "must-be-fenced",
+      "axis2Final": "already-fenced",
+      "observedInSuite": "merger-ruleset-pr-landing.test.ts: checks-timeout park writes the PR CHECKS PENDING marker",
+      "executionProof": "static:per-call-site merge write fence or ownership checkpoint",
+      "followUpTaskId": "none:no-follow-up-required"
+    },
+    {
+      "callSiteId": "packages/engine/src/merge/ruleset-pr-landing.ts::parkChecksPending::store.updateTask::#1",
+      "callSiteFingerprint": "store.updateTask(taskId,{error,mergeDetails})",
+      "file": "packages/engine/src/merge/ruleset-pr-landing.ts",
+      "enclosingSymbolPath": "parkChecksPending",
+      "writer": "store.updateTask",
+      "ordinal": 1,
+      "lineHint": 341,
+      "owningEntryPoint": "runAiMerge",
+      "reachableDataStates": [
+        "single-repository merge finalization or fenced merge-failure recovery"
+      ],
+      "axis1": "checkpoint-covered",
+      "axis1Evidence": "FIX-6 routes every PR-fallback task write through the caller's per-generation merge write fence (fence.write); the checks-pending park and landed stamp re-read the live task immediately before writing.",
+      "axis2Provisional": "must-be-fenced",
+      "axis2Final": "already-fenced",
+      "observedInSuite": "merger-ruleset-pr-landing.test.ts: checks-timeout park re-reads the live task and writes the marker + prLanding state",
+      "executionProof": "static:per-call-site merge write fence or ownership checkpoint",
+      "followUpTaskId": "none:no-follow-up-required"
+    },
+    {
+      "callSiteId": "packages/engine/src/merge/ruleset-pr-landing.ts::syncLocalIntegrationRefAfterPrMerge::store.logEntry::#1",
+      "callSiteFingerprint": "store.logEntry(taskId,`PR landing fallback merged the PR, but ${integrationBranch} could not be advanced locally (${advance.reason}${treeMatch,\"RulesetPrLanding\")",
+      "file": "packages/engine/src/merge/ruleset-pr-landing.ts",
+      "enclosingSymbolPath": "syncLocalIntegrationRefAfterPrMerge",
+      "writer": "store.logEntry",
+      "ordinal": 1,
+      "lineHint": 394,
+      "owningEntryPoint": "runAiMerge",
+      "reachableDataStates": [
+        "single-repository merge finalization or fenced merge-failure recovery"
+      ],
+      "axis1": "checkpoint-covered",
+      "axis1Evidence": "FIX-6 routes every PR-fallback task write through the caller's per-generation merge write fence (fence.write); the checks-pending park and landed stamp re-read the live task immediately before writing.",
+      "axis2Provisional": "must-be-fenced",
+      "axis2Final": "already-fenced",
+      "observedInSuite": "merger-ruleset-pr-landing.test.ts: concurrent-advance run observes the CAS refusal log",
+      "executionProof": "static:per-call-site merge write fence or ownership checkpoint",
+      "followUpTaskId": "none:no-follow-up-required"
+    },
+    {
+      "callSiteId": "packages/engine/src/merge/ruleset-pr-landing.ts::syncLocalIntegrationRefAfterPrMerge::store.logEntry::#2",
+      "callSiteFingerprint": "store.logEntry(taskId,`PR landing fallback: merge-advance auto-sync threw — continuing: ${syncError instanceof Error ? syncError.message : Str,\"RulesetPrLanding\")",
+      "file": "packages/engine/src/merge/ruleset-pr-landing.ts",
+      "enclosingSymbolPath": "syncLocalIntegrationRefAfterPrMerge",
+      "writer": "store.logEntry",
+      "ordinal": 2,
+      "lineHint": 405,
+      "owningEntryPoint": "runAiMerge",
+      "reachableDataStates": [
+        "single-repository merge finalization or fenced merge-failure recovery"
+      ],
+      "axis1": "checkpoint-covered",
+      "axis1Evidence": "FIX-6 routes every PR-fallback task write through the caller's per-generation merge write fence (fence.write); the checks-pending park and landed stamp re-read the live task immediately before writing.",
+      "axis2Provisional": "must-be-fenced",
+      "axis2Final": "already-fenced",
+      "observedInSuite": "not-observed:defensive diagnostic around the injected auto-sync callback; no harness makes runMergeAdvanceAutoSync throw",
+      "executionProof": "static:per-call-site merge write fence or ownership checkpoint",
+      "followUpTaskId": "none:no-follow-up-required"
+    },
+    {
+      "callSiteId": "packages/engine/src/merge/ruleset-pr-landing.ts::syncLocalIntegrationRefAfterPrMerge::store.updateTask::#1",
+      "callSiteFingerprint": "store.updateTask(taskId,{mergeDetails})",
+      "file": "packages/engine/src/merge/ruleset-pr-landing.ts",
+      "enclosingSymbolPath": "syncLocalIntegrationRefAfterPrMerge",
+      "writer": "store.updateTask",
+      "ordinal": 1,
+      "lineHint": 412,
+      "owningEntryPoint": "runAiMerge",
+      "reachableDataStates": [
+        "single-repository merge finalization or fenced merge-failure recovery"
+      ],
+      "axis1": "checkpoint-covered",
+      "axis1Evidence": "FIX-6 routes every PR-fallback task write through the caller's per-generation merge write fence (fence.write); the checks-pending park and landed stamp re-read the live task immediately before writing.",
+      "axis2Provisional": "must-be-fenced",
+      "axis2Final": "already-fenced",
+      "observedInSuite": "merger-ruleset-pr-landing.test.ts: landed runs stamp mergeDetails.prLanding after re-reading the task",
+      "executionProof": "static:per-call-site merge write fence or ownership checkpoint",
+      "followUpTaskId": "none:no-follow-up-required"
+    },
+    {
       "callSiteId": "packages/engine/src/merge/stale-content-review-reroute.ts::rerouteSingularStaleContentToReview>result::store.seedWorkspaceCodeReviewContinuationIfIdle::#1",
       "callSiteFingerprint": "store.seedWorkspaceCodeReviewContinuationIfIdle({taskId,nodeId,kind,state,runId,stableWorkflowRunId,continuationSequence,sourceColumn,targetColumn,irHash})",
       "file": "packages/engine/src/merge/stale-content-review-reroute.ts",
@@ -7519,7 +7700,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.appendAgentLog",
       "ordinal": 1,
-      "lineHint": 8210,
+      "lineHint": 8267,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -7539,7 +7720,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.appendAgentLog",
       "ordinal": 2,
-      "lineHint": 8345,
+      "lineHint": 8402,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -7559,7 +7740,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.appendAgentLog",
       "ordinal": 3,
-      "lineHint": 8681,
+      "lineHint": 8738,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -7579,7 +7760,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.appendAgentLog",
       "ordinal": 4,
-      "lineHint": 8751,
+      "lineHint": 8808,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -7599,7 +7780,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.appendAgentLog",
       "ordinal": 5,
-      "lineHint": 9498,
+      "lineHint": 9555,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -7619,7 +7800,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.appendAgentLog",
       "ordinal": 6,
-      "lineHint": 9507,
+      "lineHint": 9564,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -7639,7 +7820,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.appendAgentLog",
       "ordinal": 7,
-      "lineHint": 9711,
+      "lineHint": 9768,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -7659,7 +7840,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.enqueueMergeQueue",
       "ordinal": 1,
-      "lineHint": 7518,
+      "lineHint": 7575,
       "owningEntryPoint": "none:out-of-frontier",
       "reachableDataStates": [],
       "axis1": "out-of-frontier",
@@ -7677,7 +7858,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.logEntry",
       "ordinal": 1,
-      "lineHint": 7681,
+      "lineHint": 7738,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -7697,7 +7878,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.logEntry",
       "ordinal": 10,
-      "lineHint": 8076,
+      "lineHint": 8133,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -7717,7 +7898,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.logEntry",
       "ordinal": 11,
-      "lineHint": 8470,
+      "lineHint": 8527,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -7737,7 +7918,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.logEntry",
       "ordinal": 12,
-      "lineHint": 8578,
+      "lineHint": 8635,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -7757,7 +7938,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.logEntry",
       "ordinal": 13,
-      "lineHint": 8613,
+      "lineHint": 8670,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -7777,7 +7958,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.logEntry",
       "ordinal": 14,
-      "lineHint": 8682,
+      "lineHint": 8739,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -7797,7 +7978,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.logEntry",
       "ordinal": 15,
-      "lineHint": 8767,
+      "lineHint": 8824,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -7817,7 +7998,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.logEntry",
       "ordinal": 16,
-      "lineHint": 8772,
+      "lineHint": 8829,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -7837,7 +8018,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.logEntry",
       "ordinal": 17,
-      "lineHint": 9370,
+      "lineHint": 9427,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -7857,7 +8038,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.logEntry",
       "ordinal": 18,
-      "lineHint": 10025,
+      "lineHint": 10154,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -7877,7 +8058,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.logEntry",
       "ordinal": 19,
-      "lineHint": 10051,
+      "lineHint": 10180,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -7897,7 +8078,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.logEntry",
       "ordinal": 2,
-      "lineHint": 7716,
+      "lineHint": 7773,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -7917,7 +8098,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.logEntry",
       "ordinal": 20,
-      "lineHint": 10066,
+      "lineHint": 10195,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -7937,7 +8118,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.logEntry",
       "ordinal": 3,
-      "lineHint": 7757,
+      "lineHint": 7814,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -7957,7 +8138,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.logEntry",
       "ordinal": 4,
-      "lineHint": 7799,
+      "lineHint": 7856,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -7977,7 +8158,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.logEntry",
       "ordinal": 5,
-      "lineHint": 7826,
+      "lineHint": 7883,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -7997,7 +8178,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.logEntry",
       "ordinal": 6,
-      "lineHint": 7874,
+      "lineHint": 7931,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8017,7 +8198,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.logEntry",
       "ordinal": 7,
-      "lineHint": 7894,
+      "lineHint": 7951,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8037,7 +8218,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.logEntry",
       "ordinal": 8,
-      "lineHint": 7961,
+      "lineHint": 8018,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8057,7 +8238,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.logEntry",
       "ordinal": 9,
-      "lineHint": 8025,
+      "lineHint": 8082,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8077,7 +8258,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.moveTask",
       "ordinal": 1,
-      "lineHint": 9600,
+      "lineHint": 9657,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8097,7 +8278,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.publishTaskOverlapDeliveries",
       "ordinal": 1,
-      "lineHint": 9663,
+      "lineHint": 9720,
       "owningEntryPoint": "indeterminate",
       "reachableDataStates": [
         "No call edge from runAiMerge, landWorkspaceTask, or landOneRepo"
@@ -8117,7 +8298,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.transitionMergeRequestState",
       "ordinal": 1,
-      "lineHint": 7494,
+      "lineHint": 7551,
       "owningEntryPoint": "none:out-of-frontier",
       "reachableDataStates": [],
       "axis1": "out-of-frontier",
@@ -8135,7 +8316,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.transitionMergeRequestState",
       "ordinal": 2,
-      "lineHint": 7495,
+      "lineHint": 7552,
       "owningEntryPoint": "none:out-of-frontier",
       "reachableDataStates": [],
       "axis1": "out-of-frontier",
@@ -8153,7 +8334,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.transitionMergeRequestState",
       "ordinal": 3,
-      "lineHint": 7497,
+      "lineHint": 7554,
       "owningEntryPoint": "none:out-of-frontier",
       "reachableDataStates": [],
       "axis1": "out-of-frontier",
@@ -8171,7 +8352,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.updateTask",
       "ordinal": 1,
-      "lineHint": 7680,
+      "lineHint": 7737,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8191,7 +8372,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.updateTask",
       "ordinal": 10,
-      "lineHint": 8054,
+      "lineHint": 8111,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8211,7 +8392,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.updateTask",
       "ordinal": 11,
-      "lineHint": 8787,
+      "lineHint": 8844,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8231,7 +8412,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.updateTask",
       "ordinal": 12,
-      "lineHint": 9596,
+      "lineHint": 9653,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8251,7 +8432,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.updateTask",
       "ordinal": 13,
-      "lineHint": 9647,
+      "lineHint": 9704,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8271,7 +8452,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.updateTask",
       "ordinal": 14,
-      "lineHint": 9788,
+      "lineHint": 9845,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8291,7 +8472,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.updateTask",
       "ordinal": 15,
-      "lineHint": 9919,
+      "lineHint": 9976,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8311,7 +8492,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.updateTask",
       "ordinal": 16,
-      "lineHint": 9996,
+      "lineHint": 10104,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8331,7 +8512,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.updateTask",
       "ordinal": 2,
-      "lineHint": 7715,
+      "lineHint": 7772,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8351,7 +8532,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.updateTask",
       "ordinal": 3,
-      "lineHint": 7756,
+      "lineHint": 7813,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8371,7 +8552,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.updateTask",
       "ordinal": 4,
-      "lineHint": 7798,
+      "lineHint": 7855,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8391,7 +8572,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.updateTask",
       "ordinal": 5,
-      "lineHint": 7825,
+      "lineHint": 7882,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8411,7 +8592,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.updateTask",
       "ordinal": 6,
-      "lineHint": 7875,
+      "lineHint": 7932,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8431,7 +8612,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.updateTask",
       "ordinal": 7,
-      "lineHint": 7960,
+      "lineHint": 8017,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8451,7 +8632,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.updateTask",
       "ordinal": 8,
-      "lineHint": 7986,
+      "lineHint": 8043,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8471,7 +8652,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.updateTask",
       "ordinal": 9,
-      "lineHint": 8024,
+      "lineHint": 8081,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8491,7 +8672,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.upsertMergeRequestRecord",
       "ordinal": 1,
-      "lineHint": 7489,
+      "lineHint": 7546,
       "owningEntryPoint": "none:out-of-frontier",
       "reachableDataStates": [],
       "axis1": "out-of-frontier",
@@ -8509,7 +8690,7 @@
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.upsertTaskCommitAssociation",
       "ordinal": 1,
-      "lineHint": 9681,
+      "lineHint": 9738,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8529,7 +8710,7 @@
       "enclosingSymbolPath": "aiMergeTask>capture",
       "writer": "store.appendAgentLog",
       "ordinal": 1,
-      "lineHint": 9539,
+      "lineHint": 9596,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8549,7 +8730,7 @@
       "enclosingSymbolPath": "aiMergeTask>cleared",
       "writer": "store.clearStaleExecutionStartBranchReferences",
       "ordinal": 1,
-      "lineHint": 9870,
+      "lineHint": 9927,
       "owningEntryPoint": "none:out-of-frontier",
       "reachableDataStates": [],
       "axis1": "out-of-frontier",
@@ -8567,7 +8748,7 @@
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.appendAgentLog",
       "ordinal": 1,
-      "lineHint": 8829,
+      "lineHint": 8886,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8587,7 +8768,7 @@
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.appendAgentLog",
       "ordinal": 10,
-      "lineHint": 9187,
+      "lineHint": 9244,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8607,7 +8788,7 @@
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.appendAgentLog",
       "ordinal": 11,
-      "lineHint": 9222,
+      "lineHint": 9279,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8627,7 +8808,7 @@
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.appendAgentLog",
       "ordinal": 2,
-      "lineHint": 8964,
+      "lineHint": 9021,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8647,7 +8828,7 @@
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.appendAgentLog",
       "ordinal": 3,
-      "lineHint": 8989,
+      "lineHint": 9046,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8667,7 +8848,7 @@
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.appendAgentLog",
       "ordinal": 4,
-      "lineHint": 9023,
+      "lineHint": 9080,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8687,7 +8868,7 @@
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.appendAgentLog",
       "ordinal": 5,
-      "lineHint": 9035,
+      "lineHint": 9092,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8707,7 +8888,7 @@
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.appendAgentLog",
       "ordinal": 6,
-      "lineHint": 9073,
+      "lineHint": 9130,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8727,7 +8908,7 @@
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.appendAgentLog",
       "ordinal": 7,
-      "lineHint": 9124,
+      "lineHint": 9181,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8747,7 +8928,7 @@
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.appendAgentLog",
       "ordinal": 8,
-      "lineHint": 9143,
+      "lineHint": 9200,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8767,7 +8948,7 @@
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.appendAgentLog",
       "ordinal": 9,
-      "lineHint": 9177,
+      "lineHint": 9234,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8787,7 +8968,7 @@
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.logEntry",
       "ordinal": 1,
-      "lineHint": 8946,
+      "lineHint": 9003,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8807,7 +8988,7 @@
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.logEntry",
       "ordinal": 10,
-      "lineHint": 9186,
+      "lineHint": 9243,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8827,7 +9008,7 @@
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.logEntry",
       "ordinal": 11,
-      "lineHint": 9229,
+      "lineHint": 9286,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8847,7 +9028,7 @@
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.logEntry",
       "ordinal": 12,
-      "lineHint": 9265,
+      "lineHint": 9322,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8867,7 +9048,7 @@
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.logEntry",
       "ordinal": 2,
-      "lineHint": 8963,
+      "lineHint": 9020,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8887,7 +9068,7 @@
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.logEntry",
       "ordinal": 3,
-      "lineHint": 8988,
+      "lineHint": 9045,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8907,7 +9088,7 @@
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.logEntry",
       "ordinal": 4,
-      "lineHint": 9022,
+      "lineHint": 9079,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8927,7 +9108,7 @@
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.logEntry",
       "ordinal": 5,
-      "lineHint": 9034,
+      "lineHint": 9091,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8947,7 +9128,7 @@
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.logEntry",
       "ordinal": 6,
-      "lineHint": 9080,
+      "lineHint": 9137,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8967,7 +9148,7 @@
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.logEntry",
       "ordinal": 7,
-      "lineHint": 9123,
+      "lineHint": 9180,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -8987,7 +9168,7 @@
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.logEntry",
       "ordinal": 8,
-      "lineHint": 9142,
+      "lineHint": 9199,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9007,7 +9188,7 @@
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.logEntry",
       "ordinal": 9,
-      "lineHint": 9176,
+      "lineHint": 9233,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9027,7 +9208,7 @@
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.updateTask",
       "ordinal": 1,
-      "lineHint": 8942,
+      "lineHint": 8999,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9047,7 +9228,7 @@
       "enclosingSymbolPath": "aiMergeTask>reacquireReuseIntegrationWorktree",
       "writer": "store.recordActivity",
       "ordinal": 1,
-      "lineHint": 7302,
+      "lineHint": 7359,
       "owningEntryPoint": "none:out-of-frontier",
       "reachableDataStates": [],
       "axis1": "out-of-frontier",
@@ -9065,7 +9246,7 @@
       "enclosingSymbolPath": "aiMergeTask>reacquireReuseIntegrationWorktree",
       "writer": "store.recordActivity",
       "ordinal": 2,
-      "lineHint": 7402,
+      "lineHint": 7459,
       "owningEntryPoint": "none:out-of-frontier",
       "reachableDataStates": [],
       "axis1": "out-of-frontier",
@@ -9083,7 +9264,7 @@
       "enclosingSymbolPath": "aiMergeTask>reacquireReuseIntegrationWorktree",
       "writer": "store.updateTask",
       "ordinal": 1,
-      "lineHint": 7286,
+      "lineHint": 7343,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9103,7 +9284,7 @@
       "enclosingSymbolPath": "aiMergeTask>recordBranchGroupMemberLanding",
       "writer": "store.recordBranchGroupMemberLanded",
       "ordinal": 1,
-      "lineHint": 6945,
+      "lineHint": 7002,
       "owningEntryPoint": "none:out-of-frontier",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9123,7 +9304,7 @@
       "enclosingSymbolPath": "aiMergeTask>recordBranchGroupMemberLanding>settled",
       "writer": "syncGroupPrOnLanding",
       "ordinal": 1,
-      "lineHint": 6991,
+      "lineHint": 7048,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9143,7 +9324,7 @@
       "enclosingSymbolPath": "aiMergeTask>runLocalBaseRebase",
       "writer": "store.appendAgentLog",
       "ordinal": 1,
-      "lineHint": 8305,
+      "lineHint": 8362,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9163,7 +9344,7 @@
       "enclosingSymbolPath": "applyBranchCommitsPreservingHistory",
       "writer": "store.logEntry",
       "ordinal": 1,
-      "lineHint": 4843,
+      "lineHint": 4845,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9183,7 +9364,7 @@
       "enclosingSymbolPath": "applyBranchCommitsPreservingHistory",
       "writer": "store.logEntry",
       "ordinal": 2,
-      "lineHint": 4845,
+      "lineHint": 4847,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9203,7 +9384,7 @@
       "enclosingSymbolPath": "applyLayer3ConflictScopePartition",
       "writer": "store.appendAgentLog",
       "ordinal": 1,
-      "lineHint": 4249,
+      "lineHint": 4251,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9223,7 +9404,7 @@
       "enclosingSymbolPath": "applyLayer3ConflictScopePartition",
       "writer": "store.appendAgentLog",
       "ordinal": 2,
-      "lineHint": 4311,
+      "lineHint": 4313,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9243,7 +9424,7 @@
       "enclosingSymbolPath": "applyLayer3ConflictScopePartition",
       "writer": "store.appendAgentLog",
       "ordinal": 3,
-      "lineHint": 4346,
+      "lineHint": 4348,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9263,7 +9444,7 @@
       "enclosingSymbolPath": "applyLayer3ConflictScopePartition",
       "writer": "store.logEntry",
       "ordinal": 1,
-      "lineHint": 4347,
+      "lineHint": 4349,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9283,7 +9464,7 @@
       "enclosingSymbolPath": "attemptInMergeVerificationFix",
       "writer": "store.appendAgentLog",
       "ordinal": 1,
-      "lineHint": 1311,
+      "lineHint": 1313,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9303,7 +9484,7 @@
       "enclosingSymbolPath": "attemptInMergeVerificationFix",
       "writer": "store.appendAgentLog",
       "ordinal": 2,
-      "lineHint": 1378,
+      "lineHint": 1380,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9323,7 +9504,7 @@
       "enclosingSymbolPath": "attemptInMergeVerificationFix",
       "writer": "store.appendAgentLog",
       "ordinal": 3,
-      "lineHint": 1415,
+      "lineHint": 1417,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9343,7 +9524,7 @@
       "enclosingSymbolPath": "attemptInMergeVerificationFix",
       "writer": "store.appendAgentLog",
       "ordinal": 4,
-      "lineHint": 1430,
+      "lineHint": 1432,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9363,7 +9544,7 @@
       "enclosingSymbolPath": "attemptInMergeVerificationFix",
       "writer": "store.appendAgentLog",
       "ordinal": 5,
-      "lineHint": 1483,
+      "lineHint": 1485,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9383,7 +9564,7 @@
       "enclosingSymbolPath": "attemptInMergeVerificationFix",
       "writer": "store.logEntry",
       "ordinal": 1,
-      "lineHint": 1307,
+      "lineHint": 1309,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9403,7 +9584,7 @@
       "enclosingSymbolPath": "attemptInMergeVerificationFix",
       "writer": "store.logEntry",
       "ordinal": 2,
-      "lineHint": 1374,
+      "lineHint": 1376,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9423,7 +9604,7 @@
       "enclosingSymbolPath": "attemptInMergeVerificationFix",
       "writer": "store.logEntry",
       "ordinal": 3,
-      "lineHint": 1414,
+      "lineHint": 1416,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9443,7 +9624,7 @@
       "enclosingSymbolPath": "attemptInMergeVerificationFix",
       "writer": "store.logEntry",
       "ordinal": 4,
-      "lineHint": 1426,
+      "lineHint": 1428,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9463,7 +9644,7 @@
       "enclosingSymbolPath": "attemptInMergeVerificationFix",
       "writer": "store.logEntry",
       "ordinal": 5,
-      "lineHint": 1482,
+      "lineHint": 1484,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9483,7 +9664,7 @@
       "enclosingSymbolPath": "completeTask",
       "writer": "store.emit",
       "ordinal": 1,
-      "lineHint": 11625,
+      "lineHint": 11754,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9503,7 +9684,7 @@
       "enclosingSymbolPath": "completeTask",
       "writer": "store.recordAgentActivity",
       "ordinal": 1,
-      "lineHint": 11623,
+      "lineHint": 11752,
       "owningEntryPoint": "none:out-of-frontier",
       "reachableDataStates": [],
       "axis1": "out-of-frontier",
@@ -9521,7 +9702,7 @@
       "enclosingSymbolPath": "completeTask",
       "writer": "store.transitionMergeRequestState",
       "ordinal": 1,
-      "lineHint": 11615,
+      "lineHint": 11744,
       "owningEntryPoint": "none:out-of-frontier",
       "reachableDataStates": [],
       "axis1": "out-of-frontier",
@@ -9539,7 +9720,7 @@
       "enclosingSymbolPath": "completeTask>finalization",
       "writer": "finalizeProvenAutoMergeTask",
       "ordinal": 1,
-      "lineHint": 11600,
+      "lineHint": 11729,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9559,7 +9740,7 @@
       "enclosingSymbolPath": "dropAutostashHandle",
       "writer": "store.logEntry",
       "ordinal": 1,
-      "lineHint": 2413,
+      "lineHint": 2415,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9579,7 +9760,7 @@
       "enclosingSymbolPath": "executeMergeAttempt",
       "writer": "store.logEntry",
       "ordinal": 1,
-      "lineHint": 10681,
+      "lineHint": 10810,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9599,7 +9780,7 @@
       "enclosingSymbolPath": "notifyAutostashOrphans",
       "writer": "store.emit",
       "ordinal": 1,
-      "lineHint": 1860,
+      "lineHint": 1862,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9619,7 +9800,7 @@
       "enclosingSymbolPath": "persistFinalizeResetLeftovers",
       "writer": "store.logEntry",
       "ordinal": 1,
-      "lineHint": 3658,
+      "lineHint": 3660,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9639,7 +9820,7 @@
       "enclosingSymbolPath": "recordCommitAssociationFromHead",
       "writer": "store.upsertTaskCommitAssociation",
       "ordinal": 1,
-      "lineHint": 3463,
+      "lineHint": 3465,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9659,7 +9840,7 @@
       "enclosingSymbolPath": "runAiAgentForAutostashConflict",
       "writer": "store.appendAgentLog",
       "ordinal": 1,
-      "lineHint": 2594,
+      "lineHint": 2596,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9679,7 +9860,7 @@
       "enclosingSymbolPath": "runAiAgentForAutostashConflict",
       "writer": "store.logEntry",
       "ordinal": 1,
-      "lineHint": 2618,
+      "lineHint": 2620,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9699,7 +9880,7 @@
       "enclosingSymbolPath": "runAiAgentForAutostashHardFail",
       "writer": "store.appendAgentLog",
       "ordinal": 1,
-      "lineHint": 3042,
+      "lineHint": 3044,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9719,7 +9900,7 @@
       "enclosingSymbolPath": "runAiAgentForAutostashHardFail",
       "writer": "store.logEntry",
       "ordinal": 1,
-      "lineHint": 3066,
+      "lineHint": 3068,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9739,7 +9920,7 @@
       "enclosingSymbolPath": "runAiAgentForCommit",
       "writer": "store.logEntry",
       "ordinal": 1,
-      "lineHint": 11268,
+      "lineHint": 11397,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9759,7 +9940,7 @@
       "enclosingSymbolPath": "runDeterministicVerification",
       "writer": "store.appendAgentLog",
       "ordinal": 1,
-      "lineHint": 851,
+      "lineHint": 853,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9779,7 +9960,7 @@
       "enclosingSymbolPath": "runDeterministicVerification",
       "writer": "store.appendAgentLog",
       "ordinal": 10,
-      "lineHint": 1099,
+      "lineHint": 1101,
       "owningEntryPoint": "none:out-of-frontier",
       "reachableDataStates": [],
       "axis1": "out-of-frontier",
@@ -9797,7 +9978,7 @@
       "enclosingSymbolPath": "runDeterministicVerification",
       "writer": "store.appendAgentLog",
       "ordinal": 2,
-      "lineHint": 879,
+      "lineHint": 881,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9817,7 +9998,7 @@
       "enclosingSymbolPath": "runDeterministicVerification",
       "writer": "store.appendAgentLog",
       "ordinal": 3,
-      "lineHint": 910,
+      "lineHint": 912,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9837,7 +10018,7 @@
       "enclosingSymbolPath": "runDeterministicVerification",
       "writer": "store.appendAgentLog",
       "ordinal": 4,
-      "lineHint": 918,
+      "lineHint": 920,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9857,7 +10038,7 @@
       "enclosingSymbolPath": "runDeterministicVerification",
       "writer": "store.appendAgentLog",
       "ordinal": 5,
-      "lineHint": 922,
+      "lineHint": 924,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9877,7 +10058,7 @@
       "enclosingSymbolPath": "runDeterministicVerification",
       "writer": "store.appendAgentLog",
       "ordinal": 6,
-      "lineHint": 933,
+      "lineHint": 935,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9897,7 +10078,7 @@
       "enclosingSymbolPath": "runDeterministicVerification",
       "writer": "store.appendAgentLog",
       "ordinal": 7,
-      "lineHint": 951,
+      "lineHint": 953,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9917,7 +10098,7 @@
       "enclosingSymbolPath": "runDeterministicVerification",
       "writer": "store.appendAgentLog",
       "ordinal": 8,
-      "lineHint": 1053,
+      "lineHint": 1055,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9937,7 +10118,7 @@
       "enclosingSymbolPath": "runDeterministicVerification",
       "writer": "store.appendAgentLog",
       "ordinal": 9,
-      "lineHint": 1082,
+      "lineHint": 1084,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9957,7 +10138,7 @@
       "enclosingSymbolPath": "runDeterministicVerification",
       "writer": "store.logEntry",
       "ordinal": 1,
-      "lineHint": 850,
+      "lineHint": 852,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9977,7 +10158,7 @@
       "enclosingSymbolPath": "runDeterministicVerification",
       "writer": "store.logEntry",
       "ordinal": 10,
-      "lineHint": 1098,
+      "lineHint": 1100,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -9997,7 +10178,7 @@
       "enclosingSymbolPath": "runDeterministicVerification",
       "writer": "store.logEntry",
       "ordinal": 11,
-      "lineHint": 1106,
+      "lineHint": 1108,
       "owningEntryPoint": "none:out-of-frontier",
       "reachableDataStates": [],
       "axis1": "out-of-frontier",
@@ -10015,7 +10196,7 @@
       "enclosingSymbolPath": "runDeterministicVerification",
       "writer": "store.logEntry",
       "ordinal": 2,
-      "lineHint": 878,
+      "lineHint": 880,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -10035,7 +10216,7 @@
       "enclosingSymbolPath": "runDeterministicVerification",
       "writer": "store.logEntry",
       "ordinal": 3,
-      "lineHint": 909,
+      "lineHint": 911,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -10055,7 +10236,7 @@
       "enclosingSymbolPath": "runDeterministicVerification",
       "writer": "store.logEntry",
       "ordinal": 4,
-      "lineHint": 917,
+      "lineHint": 919,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -10075,7 +10256,7 @@
       "enclosingSymbolPath": "runDeterministicVerification",
       "writer": "store.logEntry",
       "ordinal": 5,
-      "lineHint": 921,
+      "lineHint": 923,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -10095,7 +10276,7 @@
       "enclosingSymbolPath": "runDeterministicVerification",
       "writer": "store.logEntry",
       "ordinal": 6,
-      "lineHint": 932,
+      "lineHint": 934,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -10115,7 +10296,7 @@
       "enclosingSymbolPath": "runDeterministicVerification",
       "writer": "store.logEntry",
       "ordinal": 7,
-      "lineHint": 946,
+      "lineHint": 948,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -10135,7 +10316,7 @@
       "enclosingSymbolPath": "runDeterministicVerification",
       "writer": "store.logEntry",
       "ordinal": 8,
-      "lineHint": 1048,
+      "lineHint": 1050,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -10155,7 +10336,7 @@
       "enclosingSymbolPath": "runDeterministicVerification",
       "writer": "store.logEntry",
       "ordinal": 9,
-      "lineHint": 1077,
+      "lineHint": 1079,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -10175,7 +10356,7 @@
       "enclosingSymbolPath": "runDeterministicVerification",
       "writer": "store.recordVerificationCachePass",
       "ordinal": 1,
-      "lineHint": 1104,
+      "lineHint": 1106,
       "owningEntryPoint": "none:out-of-frontier",
       "reachableDataStates": [],
       "axis1": "out-of-frontier",
@@ -10193,7 +10374,7 @@
       "enclosingSymbolPath": "runDeterministicVerification>executeVerificationWithRetry",
       "writer": "store.appendAgentLog",
       "ordinal": 1,
-      "lineHint": 989,
+      "lineHint": 991,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -10213,7 +10394,7 @@
       "enclosingSymbolPath": "runDeterministicVerification>executeVerificationWithRetry",
       "writer": "store.appendAgentLog",
       "ordinal": 2,
-      "lineHint": 1003,
+      "lineHint": 1005,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -10233,7 +10414,7 @@
       "enclosingSymbolPath": "runDeterministicVerification>executeVerificationWithRetry",
       "writer": "store.appendAgentLog",
       "ordinal": 3,
-      "lineHint": 1017,
+      "lineHint": 1019,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -10253,7 +10434,7 @@
       "enclosingSymbolPath": "runDeterministicVerification>executeVerificationWithRetry",
       "writer": "store.appendAgentLog",
       "ordinal": 4,
-      "lineHint": 1029,
+      "lineHint": 1031,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -10273,7 +10454,7 @@
       "enclosingSymbolPath": "runDeterministicVerification>executeVerificationWithRetry",
       "writer": "store.appendAgentLog",
       "ordinal": 5,
-      "lineHint": 1034,
+      "lineHint": 1036,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -10293,7 +10474,7 @@
       "enclosingSymbolPath": "runDeterministicVerification>executeVerificationWithRetry",
       "writer": "store.logEntry",
       "ordinal": 1,
-      "lineHint": 988,
+      "lineHint": 990,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -10313,7 +10494,7 @@
       "enclosingSymbolPath": "runDeterministicVerification>executeVerificationWithRetry",
       "writer": "store.logEntry",
       "ordinal": 2,
-      "lineHint": 1002,
+      "lineHint": 1004,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -10333,7 +10514,7 @@
       "enclosingSymbolPath": "runDeterministicVerification>executeVerificationWithRetry",
       "writer": "store.logEntry",
       "ordinal": 3,
-      "lineHint": 1016,
+      "lineHint": 1018,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -10353,7 +10534,7 @@
       "enclosingSymbolPath": "runDeterministicVerification>executeVerificationWithRetry",
       "writer": "store.logEntry",
       "ordinal": 4,
-      "lineHint": 1028,
+      "lineHint": 1030,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -10373,7 +10554,7 @@
       "enclosingSymbolPath": "runDeterministicVerification>executeVerificationWithRetry",
       "writer": "store.logEntry",
       "ordinal": 5,
-      "lineHint": 1033,
+      "lineHint": 1035,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -10393,7 +10574,7 @@
       "enclosingSymbolPath": "sweepAutostashOrphans",
       "writer": "store.logEntry",
       "ordinal": 1,
-      "lineHint": 2061,
+      "lineHint": 2063,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -10413,7 +10594,7 @@
       "enclosingSymbolPath": "sweepAutostashOrphans",
       "writer": "store.logEntry",
       "ordinal": 2,
-      "lineHint": 2075,
+      "lineHint": 2077,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -10433,7 +10614,7 @@
       "enclosingSymbolPath": "syncDependenciesForMerge",
       "writer": "store.logEntry",
       "ordinal": 1,
-      "lineHint": 713,
+      "lineHint": 715,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -10453,7 +10634,7 @@
       "enclosingSymbolPath": "syncGroupPrOnLanding",
       "writer": "store.updateBranchGroup",
       "ordinal": 1,
-      "lineHint": 6809,
+      "lineHint": 6866,
       "owningEntryPoint": "none:out-of-frontier",
       "reachableDataStates": [],
       "axis1": "out-of-frontier",
@@ -10471,7 +10652,7 @@
       "enclosingSymbolPath": "tryEarlyEmptyOwnDiffFinalize",
       "writer": "store.logEntry",
       "ordinal": 1,
-      "lineHint": 6571,
+      "lineHint": 6628,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -10491,7 +10672,7 @@
       "enclosingSymbolPath": "tryEarlyEmptyOwnDiffFinalize",
       "writer": "store.logEntry",
       "ordinal": 2,
-      "lineHint": 6622,
+      "lineHint": 6679,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -10511,7 +10692,7 @@
       "enclosingSymbolPath": "tryEarlyEmptyOwnDiffFinalize",
       "writer": "store.updateTask",
       "ordinal": 1,
-      "lineHint": 6570,
+      "lineHint": 6627,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -10531,7 +10712,7 @@
       "enclosingSymbolPath": "tryEarlyEmptyOwnDiffFinalize",
       "writer": "store.updateTask",
       "ordinal": 2,
-      "lineHint": 6621,
+      "lineHint": 6678,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -10551,7 +10732,7 @@
       "enclosingSymbolPath": "tryEarlyEmptyOwnDiffFinalize",
       "writer": "store.updateTask",
       "ordinal": 3,
-      "lineHint": 6734,
+      "lineHint": 6791,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"

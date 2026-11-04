@@ -208,6 +208,21 @@ export interface MergeDetails {
   after the blocker task may already be archived or deleted.
   */
   workspaceLandedFiles?: Record<string, string[]>;
+  /*
+  FNXC:RulesetPrLanding 2026-11-04-09:42:
+  FIX-6: durable state for a landing delivered through the ruleset-aware PR fallback in the merger.
+  `checks-pending` marks the honest park after the bounded `gh pr checks` wait timed out — the PR
+  exists but required checks had not reported within the cap, so delivery is NOT complete; the
+  next merge attempt (or an operator) re-detects the existing PR and squash-merges it. `landed`
+  marks a fallback landing whose squash-merge completed. Stored in the task JSON column, so this
+  additive optional field requires no SQL migration or schema-applier registration.
+  */
+  prLanding?: {
+    state: "checks-pending" | "landed";
+    prUrl?: string;
+    headBranch?: string;
+    updatedAt?: string;
+  };
 }
 
 /** Represents an agent's checkout lease on a task. */
