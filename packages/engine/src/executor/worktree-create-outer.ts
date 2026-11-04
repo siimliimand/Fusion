@@ -6,14 +6,17 @@
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { existsSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { isAbsolute } from "node:path";
-import type { RunMutationContext, Settings } from "@fusion/core";
+import type { RunAuditEventInput, RunMutationContext, Settings } from "@fusion/core";
 import { isBranchConflictError } from "../execution/branch-conflicts.js";
 import { StaleWorktreeIndexLockError } from "../worktree/worktree-stale-lock.js";
 import { resolveIntegrationBranch } from "../merge/integration-branch.js";
 import { executorLog } from "../logger.js";
+import { emitBoundedRunAudit } from "../util/emit-bounded-run-audit.js";
+import { installTaskWorktreeIdentityGuard } from "../worktree/worktree-hooks.js";
 import { quoteShellArg } from "./shell-quote.js";
-import { NonRetryableWorktreeError } from "./worktree-registry-helpers.js";
+import { getWorktreeBranchMap, isRegisteredWorktree, NonRetryableWorktreeError } from "./worktree-registry-helpers.js";
 
 const execAsync = promisify(exec);
 
@@ -27,6 +30,8 @@ export type WorktreeOuterStore = {
     outcome?: string | undefined,
     runContext?: RunMutationContext | undefined,
   ) => Promise<unknown>;
+  /** FN-9175 bounded run-audit seam sink; optional so minimal test adapters stay assignable. */
+  recordRunAuditEvent?: (input: RunAuditEventInput) => unknown;
 };
 
 export type WorktreeOuterCreateDeps = {
@@ -288,6 +293,194 @@ AGENTS.md “Prefer main For Direct Work; Use Worktrees For Branches” standing
 never switched with `git checkout` or `git switch` to select a task branch; see the primary-checkout
 invariant regression test for the executable guard.
 */
+/*
+FNXC:WorktreeUnlandedGuard 2026-11-04-09:39:
+INVARIANT: worktree (re)acquisition must never move or delete a `fusion/<taskId>` branch ref whose
+tip carries commits that are not contained in the acquisition base. The state between "executor
+committed" and "AI merge landed" is NORMAL, and a refresh or dependency import is an optimization —
+never a precondition for node work (SUBC-011: a re-acquisition rebuilt the branch from base and the
+implementation commit left the branch; it survived only as a loose object referenced by a mission
+branch, where a `git gc` could have destroyed it).
+
+Before any branch re-create (`git worktree add -b`, recovery `git branch -D`, `checkout -B`) or
+dependency squash-import in the executor outer acquisition, the guard measures
+`rev-list --count <baseTip>..<branchTip>`. A nonzero count means a rebuild would orphan those
+commits, so the rebuild AND the import are skipped; acquisition hands back a usable checkout for the
+existing branch tip instead and surfaces the refusal (task log + `worktree:branch-refresh-refused`
+audit). When the tip IS contained in the base the build proceeds exactly as before, and a rebuild
+that re-points the ref is still audited (`worktree:branch-rebuild-proceeded`) so the destructive
+class stays observable.
+
+Surfaces covered: every caller routed through `createWorktree` here — TaskExecutor task acquisition,
+foreach-instance worktrees (build-foreach-worktree-deps) and spawned-agent child worktrees
+(create-spawn-agent-tool).
+
+Surfaces deliberately excluded, with their existing fences:
+- Workspace per-repo acquisition (`acquireWorkspaceRepoWorktree`) does NOT route through this
+  primitive; it has its own lease/fence/baseline machinery (FN-9059/FN-179) and must never be
+  refused by this guard.
+- `reanchorBranchToBase` (`checkout -B`) fires only after `classifyBootstrapMisbinding` proves zero
+  own AND zero non-attributed commits on the branch (worktree-acquisition resume verify,
+  executor/bootstrap-misbinding-recovery, auto-recovery-handlers/branch-worktree,
+  recovery/foreign-only-contamination) — nothing discardable can exist there.
+- `refreshReusedWorktreeBase` rebases own commits and only `reset --hard` when the rev-list count
+  is 0; the backend bare-branch collision ladder deletes only `tip-already-merged`/`fully-subsumed`
+  tips.
+
+The guard fails OPEN: when branch tip, base tip, or the count cannot be proven (missing refs, git
+errors), acquisition proceeds exactly as before — an unprovable state must not block execution.
+This path is not lifecycle-moving; user pauses and `autoMerge:false` behavior are unchanged.
+*/
+export type UnlandedBranchGuardVerdict = {
+  unlanded: boolean;
+  unlandedCommitCount: number;
+  /** Resolved pre-acquisition branch tip, when the branch ref existed and resolved. */
+  branchTipSha?: string;
+  /** Resolved base tip the acquisition would rebuild from, when it resolved. */
+  baseTipSha?: string;
+};
+
+/** No-op verdict used when the guard cannot prove anything (fail-open) or nothing is unlanded. */
+const landedVerdict: UnlandedBranchGuardVerdict = { unlanded: false, unlandedCommitCount: 0 };
+
+async function revParseBranchTip(rootDir: string, branch: string): Promise<string | undefined> {
+  try {
+    const { stdout } = await execAsync(
+      `git rev-parse --verify ${quoteShellArg(`refs/heads/${branch}`)}^{commit}`,
+      { cwd: rootDir },
+    );
+    const tip = stdout.trim();
+    return /^[a-f0-9]{40,64}$/i.test(tip) ? tip : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Measure the commits on `branch` that a rebuild to `baseRef` would orphan.
+ * Fails open (unlanded=false) whenever either side cannot be resolved or the count errors.
+ */
+export async function detectUnlandedBranchCommits(
+  rootDir: string,
+  branch: string,
+  baseRef: string,
+): Promise<UnlandedBranchGuardVerdict> {
+  const branchTipSha = await revParseBranchTip(rootDir, branch);
+  if (!branchTipSha) return landedVerdict;
+  let baseTipSha: string;
+  try {
+    const { stdout } = await execAsync(
+      `git rev-parse --verify ${quoteShellArg(`${baseRef}^{commit}`)}`,
+      { cwd: rootDir },
+    );
+    baseTipSha = stdout.trim();
+    if (!/^[a-f0-9]{40,64}$/i.test(baseTipSha)) return landedVerdict;
+  } catch {
+    return landedVerdict;
+  }
+  let unlandedCommitCount = 0;
+  try {
+    const { stdout } = await execAsync(
+      `git rev-list --count ${quoteShellArg(`${baseTipSha}..${branchTipSha}`)}`,
+      { cwd: rootDir },
+    );
+    const parsed = Number.parseInt(stdout.trim(), 10);
+    if (!Number.isFinite(parsed) || parsed < 0) return landedVerdict;
+    unlandedCommitCount = parsed;
+  } catch {
+    return landedVerdict;
+  }
+  return unlandedCommitCount > 0
+    ? { unlanded: true, unlandedCommitCount, branchTipSha, baseTipSha }
+    : { unlanded: false, unlandedCommitCount: 0, branchTipSha, baseTipSha };
+}
+
+type WorktreeIdentityGuardSettings = Partial<
+  Pick<
+    Settings,
+    "commitMsgHookEnabled" | "taskPrefix" | "taskAttributionTrailerNames" | "commitAuthorEnabled" | "commitAuthorName" | "commitAuthorEmail"
+  >
+>;
+
+async function installIdentityGuardBestEffort(
+  worktreePath: string,
+  taskId: string,
+  branch: string,
+  settings: WorktreeIdentityGuardSettings,
+): Promise<void> {
+  try {
+    await installTaskWorktreeIdentityGuard({
+      worktreePath,
+      taskId,
+      expectedBranch: branch,
+      commitMsgHookEnabled: settings.commitMsgHookEnabled,
+      taskPrefix: settings.taskPrefix,
+      taskAttributionTrailerName: settings.taskAttributionTrailerNames?.[0],
+      commitAuthorEnabled: settings.commitAuthorEnabled,
+      commitAuthorName: settings.commitAuthorName,
+      commitAuthorEmail: settings.commitAuthorEmail,
+    });
+  } catch (error) {
+    executorLog.warn(
+      `Unlanded-branch keep: identity guard install failed for ${taskId} at ${worktreePath} (continuing): ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+/**
+ * FNXC:WorktreeUnlandedGuard 2026-11-04-09:39:
+ * Hand back a usable checkout for a branch whose unlanded commits forbid a rebuild. Preference
+ * order: an existing registered worktree already checked out on the branch, the requested path when
+ * it is already a registered worktree, a fresh checkout attached to the branch AT ITS TIP (never
+ * `-b`/`-f`, so the ref never moves), and finally the branch's registered holder. Throws a
+ * non-retryable error when nothing can be secured — deletion of the branch is never a fallback.
+ */
+async function keepUnlandedBranchWorktree(
+  deps: WorktreeOuterCreateDeps,
+  settings: Partial<Settings>,
+  input: {
+    branch: string;
+    path: string;
+    taskId: string;
+    unlandedCommitCount: number;
+    baseRef: string;
+  },
+): Promise<{ path: string; branch: string }> {
+  const { branch, path, taskId } = input;
+  const branchHolders = await getWorktreeBranchMap(deps.rootDir).catch(() => new Map<string, string>());
+  const holderPath = branchHolders.get(branch);
+  if (holderPath && existsSync(holderPath)) return { path: holderPath, branch };
+  if (existsSync(path) && (await isRegisteredWorktree(deps.rootDir, path).catch(() => false))) {
+    return { path, branch };
+  }
+  const attach = async (): Promise<{ path: string; branch: string }> => {
+    await execAsync(`git worktree add ${quoteShellArg(path)} ${quoteShellArg(branch)}`, { cwd: deps.rootDir });
+    await installIdentityGuardBestEffort(path, taskId, branch, settings);
+    return { path, branch };
+  };
+  try {
+    return await attach();
+  } catch (firstError) {
+    // A leftover unregistered directory blocks the attach; clear it only under the same
+    // "not a registered worktree" rule the fresh-create path applies, then retry once.
+    if (existsSync(path) && !(await isRegisteredWorktree(deps.rootDir, path).catch(() => true))) {
+      await rm(path, { recursive: true, force: true }).catch(() => undefined);
+      try {
+        return await attach();
+      } catch (retryError) {
+        throw new NonRetryableWorktreeError(
+          `Unlanded-branch keep failed for ${taskId}: branch ${branch} carries ${input.unlandedCommitCount} commit(s) not in ${input.baseRef}; ` +
+            `rebuild was refused and attaching the branch failed: ${retryError instanceof Error ? retryError.message : String(retryError)}`,
+        );
+      }
+    }
+    throw new NonRetryableWorktreeError(
+      `Unlanded-branch keep failed for ${taskId}: branch ${branch} carries ${input.unlandedCommitCount} commit(s) not in ${input.baseRef}; ` +
+        `rebuild was refused and attaching the branch failed: ${firstError instanceof Error ? firstError.message : String(firstError)}`,
+    );
+  }
+}
+
 export async function createWorktree(
   deps: WorktreeOuterCreateDeps,
   branch: string,
@@ -335,6 +528,46 @@ export async function createWorktree(
   const initialStartPoint = squashImport ? squashImport.mainBase : resolvedStartPoint;
   const settings = await deps.store.getSettings();
 
+  /*
+   * FNXC:WorktreeUnlandedGuard 2026-11-04-09:39:
+   * Prove the branch is fully contained in the acquisition base BEFORE any rebuild. The base is the
+   * concrete start point the create path would rebuild from (squash-import mainBase when an import
+   * is planned, the resolved start point otherwise); without a resolvable base the guard fails open.
+   */
+  const guardBaseRef = squashImport ? squashImport.mainBase : resolvedStartPoint;
+  const guardVerdict = guardBaseRef
+    ? await detectUnlandedBranchCommits(deps.rootDir, branch, guardBaseRef)
+    : landedVerdict;
+  if (guardVerdict.unlanded && guardBaseRef) {
+    const kept = await keepUnlandedBranchWorktree(deps, settings, {
+      branch,
+      path: currentPath,
+      taskId,
+      unlandedCommitCount: guardVerdict.unlandedCommitCount,
+      baseRef: guardBaseRef,
+    });
+    await deps.store.logEntry(
+      taskId,
+      `Worktree refresh skipped: branch ${branch} has ${guardVerdict.unlandedCommitCount} commit(s) not in ${guardBaseRef}; nothing discarded`,
+    );
+    await emitBoundedRunAudit(deps.store, {
+      agentId: "system",
+      runId: `${taskId}:worktree-unlanded-guard`,
+      taskId,
+      domain: "git",
+      mutationType: "worktree:branch-refresh-refused",
+      target: branch,
+      metadata: {
+        taskId,
+        branch,
+        base: guardBaseRef,
+        unlandedCommitCount: guardVerdict.unlandedCommitCount,
+        outcome: "skipped",
+      },
+    });
+    return kept;
+  }
+
   for (let attempt = 0; attempt < deps.maxWorktreeRetries; attempt++) {
     try {
       const result = await deps.tryCreateWorktree(
@@ -347,6 +580,32 @@ export async function createWorktree(
         allowSiblingBranchRename,
         settings,
       );
+      /*
+       * FNXC:WorktreeUnlandedGuard 2026-11-04-09:39:
+       * Happy-path observability: a rebuild that re-pointed the branch ref is audited so the
+       * discard-capable class stays visible. With the guard above, this can only fire when the
+       * previous tip was fully contained in the base, so no unlanded commit is ever the subject.
+       */
+      if (guardVerdict.branchTipSha) {
+        const rebuiltTip = await revParseBranchTip(deps.rootDir, branch);
+        if (rebuiltTip && rebuiltTip !== guardVerdict.branchTipSha) {
+          await emitBoundedRunAudit(deps.store, {
+            agentId: "system",
+            runId: `${taskId}:worktree-unlanded-guard`,
+            taskId,
+            domain: "git",
+            mutationType: "worktree:branch-rebuild-proceeded",
+            target: branch,
+            metadata: {
+              taskId,
+              branch,
+              base: guardBaseRef ?? "",
+              unlandedCommitCount: 0,
+              outcome: "rebuild-proceeded",
+            },
+          });
+        }
+      }
       // Squash-import dep content into the freshly created worktree so the
       // branch contains main's history + 1 import commit instead of the
       // dep's raw commits.
