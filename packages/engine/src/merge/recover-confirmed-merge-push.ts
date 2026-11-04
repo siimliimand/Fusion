@@ -5,6 +5,10 @@ import { activeSessionRegistry, executingTaskLock } from "../agents/active-sessi
 import { isTaskExecutionLive } from "./merge-execution-exclusion.js";
 import { isPushAfterMergeEnabled } from "./push-after-merge-policy.js";
 import { createMergeWriteFence, type MergeWriteFence } from "./merge-write-fence.js";
+import {
+  mergeConfirmationReconcileEligible,
+  reconcileConfirmedMergeLanding,
+} from "./recover-confirmed-merge-reconcile.js";
 
 const execFileAsync = promisify(execFile);
 const COOLDOWN_MS = 5 * 60_000;
@@ -36,7 +40,16 @@ export async function recoverConfirmedMergePush(
   run: Run = runGit,
   suppliedFence?: MergeWriteFence,
 ): Promise<void> {
-  if (!store.rootDir || !eligible(task, settings)) return;
+  if (!store.rootDir) return;
+  /*
+  FNXC:MergeConfirmationReconcile 2026-11-04-09:39:
+  Entry admits either lane: push recovery (unchanged `eligible()` gates) or merge-confirmation
+  reconciliation, which intentionally ignores autoMerge/pushAfterMerge settings — un-confirming a
+  phantom restores the pre-landing state on `autoMerge:false` cards, and any re-merge then follows
+  the card's normal human gates.
+  */
+  if (!eligible(task, settings) && !mergeConfirmationReconcileEligible(task, settings)) return;
+  const canPushRecover = eligible(task, settings);
   const details = task.mergeDetails!;
   const branch = details.mergeTargetBranch;
   const sha = details.commitSha;
@@ -65,20 +78,62 @@ export async function recoverConfirmedMergePush(
   };
   let claimed = false;
   let failed = false;
-  const ownsAttempt = (live: Task) => live.mergeDetails?.commitSha === sha
+  // The SHA the flow proves and delivers: the recorded SHA, or the main-side same-tree commit a
+  // content-match reconciliation rewrote it to.
+  let effectiveSha = sha;
+  // Snapshot the claim gate judges; a content-match rewrite bumps updatedAt, so it must be re-read
+  // from the store before the snapshot-fenced claim below can own the attempt.
+  let flowSnapshot = task;
+  const ownsAttempt = (live: Task) => live.mergeDetails?.commitSha === effectiveSha
     && live.mergeDetails.mergeTargetBranch === branch
     && live.mergeDetails.pushRecovery?.target === target
-    && live.mergeDetails.pushRecovery.commitSha === sha
+    && live.mergeDetails.pushRecovery.commitSha === effectiveSha
     && live.mergeDetails.pushRecovery.nextAttemptAt === nextAttemptAt;
   try {
     await git(["check-ref-format", `refs/heads/${branch}`]);
     await git(["check-ref-format", `refs/heads/${targetBranch}`]);
-    await git(["merge-base", "--is-ancestor", sha, `refs/heads/${branch}`]);
+    /*
+    FNXC:MergeConfirmationReconcile 2026-11-04-09:39:
+    The is-ancestor proof gates the whole push-recovery flow. When it FAILS, the recorded
+    "confirmed" landing is not on the local target branch at all — retrying delivery can never
+    succeed and bookkeeping alone previously left the false confirmation deferred forever
+    (SUBC-011). Reconcile instead: rewrite same-tree landings to the main-side SHA and continue the
+    normal flow, or un-confirm a true phantom and re-open the merge in-column. Only reconcile-eligible
+    tasks take that path; every other failure keeps the original bookkeeping behavior.
+    */
+    try {
+      await git(["merge-base", "--is-ancestor", sha, `refs/heads/${branch}`]);
+    } catch (ancestorError) {
+      if (!mergeConfirmationReconcileEligible(task, settings)) throw ancestorError;
+      const reconciled = await reconcileConfirmedMergeLanding({
+        store, task, settings, branch, recordedSha: sha, run: git, fence,
+      });
+      if (reconciled.outcome === "content-match") {
+        effectiveSha = reconciled.landedSha;
+        const rewritten = await store.getTask(task.id);
+        if (rewritten) flowSnapshot = rewritten;
+        // Continue the normal push-recovery flow below with the reconciled main-side SHA.
+      } else if (reconciled.outcome === "reopened" || reconciled.outcome === "exhausted") {
+        return;
+      } else {
+        // Skipped (transient git failure, busy graph, missing workflow) — keep the legacy
+        // bookkeeping path so the state stays observable and retries stay bounded.
+        throw ancestorError;
+      }
+    }
+    /*
+    FNXC:MergeConfirmationReconcile 2026-11-04-09:39:
+    Push-recovery-only lanes end here. A reconcile-eligible task that is not push-recovery-eligible
+    (autoMerge:false, pushAfterMerge off, PR strategy, operator holds) has had its proof read: a
+    content-match rewrite already landed through the reconcile fence, a phantom was re-opened, and
+    remote delivery keeps ALL of its existing eligibility gates — no push-retry marker is written.
+    */
+    if (!canPushRecover) return;
     await fence.write("finalization", () => store.updateTaskAtomic(task.id, (live) => {
-      if (live.updatedAt !== task.updatedAt || !eligible(live, settings)
-        || live.mergeDetails?.commitSha !== sha || live.mergeDetails.mergeTargetBranch !== branch) return null;
+      if (live.updatedAt !== flowSnapshot.updatedAt || !eligible(live, settings)
+        || live.mergeDetails?.commitSha !== effectiveSha || live.mergeDetails.mergeTargetBranch !== branch) return null;
       claimed = true;
-      return { mergeDetails: { ...live.mergeDetails, pushRecovery: { target, commitSha: sha, nextAttemptAt } } };
+      return { mergeDetails: { ...live.mergeDetails, pushRecovery: { target, commitSha: effectiveSha, nextAttemptAt } } };
     }));
     if (!claimed) return;
     const current = await store.getTask(task.id);
@@ -86,7 +141,7 @@ export async function recoverConfirmedMergePush(
     if (!eligible(current, currentSettings) || currentSettings.pushRemote !== settings.pushRemote || !ownsAttempt(current)) return;
     const advertised = await git(["ls-remote", "--heads", remote, `refs/heads/${targetBranch}`]);
     const remoteSha = advertised.split(/\s+/)[0];
-    let delivered = remoteSha === sha;
+    let delivered = remoteSha === effectiveSha;
     if (!delivered && /^[a-f0-9]{40,64}$/i.test(remoteSha)) {
       // A newer remote tip may already contain this task; missing objects fall through to safe push.
       try {
@@ -94,13 +149,13 @@ export async function recoverConfirmedMergePush(
       } catch {
         await git(["fetch", "--no-tags", "--no-write-fetch-head", remote, `refs/heads/${targetBranch}`]);
       }
-      try { await git(["merge-base", "--is-ancestor", sha, remoteSha]); delivered = true; } catch { /* non-force push decides */ }
+      try { await git(["merge-base", "--is-ancestor", effectiveSha, remoteSha]); delivered = true; } catch { /* non-force push decides */ }
     }
     if (!delivered) {
       const beforePush = await store.getTask(task.id);
       const beforePushSettings = await store.getSettings();
       if (!eligible(beforePush, beforePushSettings) || beforePushSettings.pushRemote !== settings.pushRemote || !ownsAttempt(beforePush)) return;
-      await git(["push", remote, `${sha}:refs/heads/${targetBranch}`]);
+      await git(["push", remote, `${effectiveSha}:refs/heads/${targetBranch}`]);
     }
     await fence.write("finalization", () => store.updateTaskAtomic(task.id, (live) => ownsAttempt(live)
       ? { mergeDetails: { ...live.mergeDetails, pushRecovery: { target, commitSha: sha, nextAttemptAt, pushedAt: new Date().toISOString() } } }

@@ -141,6 +141,20 @@ export interface MergeDetails {
   mergeCommitMessage?: string;
   mergedAt?: string;
   mergeConfirmed?: boolean;
+  /*
+  FNXC:MergeConfirmationReconcile 2026-11-04-09:39:
+  `mergeConfirmed` is treated as proof-of-landing by finalization, but one bad writer can record it
+  for a SHA that was never an ancestor of the target branch. Recovery reconciles that state: the
+  count bounds re-open attempts and the reconciliation record preserves WHY the confirmation was
+  cleared (and which SHA it was cleared for) so operators and self-healing can distinguish a
+  repaired phantom from a genuine landing.
+  */
+  mergeConfirmationReconcileCount?: number;
+  reconciliation?: {
+    clearedAt: string;
+    reason: "recorded-sha-not-on-target";
+    recordedSha: string;
+  };
   noOpMerge?: boolean;
   noOpReason?: string;
   prNumber?: number;

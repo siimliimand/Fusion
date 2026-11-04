@@ -24,7 +24,13 @@ import { isTaskExecutionLive } from "./merge-execution-exclusion.js";
 const DEFAULT_CHECKOUT_LEASE_GRACE_MS = 10 * 60_000;
 const CHECKOUT_LEASE_STALENESS_MULTIPLIER = 3;
 
-function hasFreshCheckoutLease(
+/**
+ * FNXC:PostMergeRecovery 2026-10-01-06:55:
+ * A fresh durable checkout lease is live ownership even when this process has no active session.
+ * Exported for merge-confirmation reconciliation (FIX-2) so both recovery lanes share one lease
+ * definition and cannot drift open.
+ */
+export function hasFreshCheckoutLease(
   task: { checkoutRunId?: string | null; checkoutLeaseRenewedAt?: string | null },
   settings: { taskStuckTimeoutMs?: number },
 ): boolean {

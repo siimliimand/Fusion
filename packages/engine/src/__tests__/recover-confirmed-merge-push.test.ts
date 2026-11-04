@@ -98,22 +98,38 @@ describe("confirmed landing remote delivery recovery", () => {
     expect(task.mergeDetails?.pushRecovery?.error).toBeUndefined();
   });
 
-  it.each(["pause", "user-pause", "engine-pause", "global-pause", "push-off", "auto-off", "task-auto-off", "workspace", "shared-group", "pull-request", "lease", "operator-hold"])("honors %s before git or task writes", async (condition) => {
+  it.each(["pause", "user-pause", "engine-pause", "global-pause", "workspace", "shared-group", "lease"])("honors %s before git or task writes", async (condition) => {
     const { task, settings, store, run } = fixture();
     if (condition === "pause") task.paused = true;
     if (condition === "user-pause") task.userPaused = true;
     if (condition === "engine-pause") settings.enginePaused = true;
     if (condition === "global-pause") settings.globalPause = true;
+    if (condition === "workspace") task.workspaceWorktrees = {};
+    if (condition === "shared-group") task.branchContext = { assignmentMode: "shared", groupId: "group" } as Task["branchContext"];
+    if (condition === "lease") { task.checkoutRunId = "running"; task.checkoutLeaseRenewedAt = new Date().toISOString(); }
+    await recoverConfirmedMergePush(store, task, settings, run);
+    expect(run).not.toHaveBeenCalled();
+    expect(store.updateTaskAtomic).not.toHaveBeenCalled();
+  });
+
+  /*
+   * FNXC:MergeConfirmationReconcile 2026-11-04-09:39:
+   * These conditions gate push RECOVERY only, not reconciliation: the ancestor-proof git read may
+   * run (a false confirmation must be reconcilable on autoMerge:false cards too), but no push and
+   * no push-retry marker may be written. Before FIX-2 the entry gate closed everything.
+   */
+  it.each(["push-off", "auto-off", "task-auto-off", "pull-request", "operator-hold"])("gates push recovery (no push, no marker) but allows the reconciliation proof for %s", async (condition) => {
+    const { task, settings, store, run } = fixture();
     if (condition === "push-off") settings.pushAfterMerge = false;
     if (condition === "auto-off") settings.autoMerge = false;
     if (condition === "task-auto-off") task.autoMerge = false;
-    if (condition === "shared-group") task.branchContext = { assignmentMode: "shared", groupId: "group" } as Task["branchContext"];
     if (condition === "pull-request") settings.mergeStrategy = "pull-request";
-    if (condition === "workspace") task.workspaceWorktrees = {};
-    if (condition === "lease") { task.checkoutRunId = "running"; task.checkoutLeaseRenewedAt = new Date().toISOString(); }
     if (condition === "operator-hold") task.status = "awaiting-approval";
     await recoverConfirmedMergePush(store, task, settings, run);
-    expect(run).not.toHaveBeenCalled();
+    expect(run.mock.calls.some(([args]) => args[0] === "push")).toBe(false);
+    expect(task.mergeDetails?.pushRecovery).toBeUndefined();
+    expect(task.mergeDetails?.mergeConfirmed).toBe(true);
+    expect(task.mergeDetails?.commitSha).toBe(sha);
     expect(store.updateTaskAtomic).not.toHaveBeenCalled();
   });
 
