@@ -158,7 +158,7 @@ import { ApiError, badRequest, conflict, notFound } from "../api-error.js";
 // FNXC:TaskLookup404 2026-07-26-11:40: shared task-miss -> 404 mapping seam.
 import { isTaskLookupMiss, rethrowTaskApiError } from "./task-lookup-error.js";
 import { restartTaskStage } from "./task-restart-stage.js";
-import { resumeExternallyBlockedTask } from "./task-external-block-resume.js";
+import { republishExternalBlockResumeAsStageRestart, resumeExternallyBlockedTask } from "./task-external-block-resume.js";
 import type { ApiRoutesContext } from "./types.js";
 import { deriveAutoTaskBranch, derivePerTaskBranch, getBranchSelectionMode, resolveBranchSelection } from "./branch-selection.js";
 import { isDaemonAuthActive } from "../auth-middleware.js";
@@ -3437,6 +3437,23 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
       });
       if (externalBlockResume.kind === "resumed") {
         res.json(externalBlockResume.task);
+        return;
+      }
+      if (externalBlockResume.kind === "stale-node") {
+        // FNXC:ExternalBlockResumeRetarget 2026-11-04-09:34: the frozen node sits in an earlier
+        // column than the card; publish through the same stage-restart path as Retry instead of
+        // arming a continuation whose column move lifecycle containment would refuse.
+        const selfHealingManager = _resolveSelfHealingManager(scopedStore);
+        const retargeted = await republishExternalBlockResumeAsStageRestart({
+          store: scopedStore,
+          engine,
+          taskId: req.params.id,
+          stale: externalBlockResume,
+          activeMergeTaskId: selfHealingManager?.getActiveMergeTaskId?.() ?? null,
+          getActiveMergeTaskId: () => selfHealingManager?.getActiveMergeTaskId?.() ?? null,
+          staleMergingStatusMinAgeMs: selfHealingManager?.getStaleMergingStatusMinAgeMs?.(),
+        });
+        res.json(retargeted);
         return;
       }
       const retrySpecificationStatus =
