@@ -8,6 +8,7 @@ import {
   classifyInitFailure,
   createBootSmokePhasePlan,
   createChildEnv,
+  findExtensionLoadFailures,
   runPreflightPhasePlan,
   removeTempDir,
 } from "../boot-smoke.mjs";
@@ -119,6 +120,32 @@ test("init liveness classification preserves every failing state", () => {
   assert.equal(classifyInitFailure({ ...base, stderr: "Detected unsettled top-level await" }, true), "unsettled-top-level-await");
   assert.equal(classifyInitFailure(base, false), "missing-project-marker");
   assert.equal(classifyInitFailure({ ...base, error: new Error("spawn failed") }, true), "process-error");
+});
+
+// FNXC:BootSmoke 2026-11-04-09:44 (FIX-9): the gate must fail on the exact
+// production line shape (`[extensions] Failed to load <path>: <error>`) and
+// stay silent on clean boot logs, including lookalike output that merely
+// mentions extensions.
+test("extension load failure scan flags every occurrence of the production failure line", () => {
+  const incidentLine = "[extensions] Failed to load packages/pi-claude-cli/index.ts: Cannot find module '…/@earendil-works/pi-ai/dist/compat.js/utils/transcript'";
+  const log = [
+    "boot: starting",
+    incidentLine,
+    "extensions: registered 0 providers",
+    "[extensions] Failed to load other-ext/index.ts: some other error",
+  ].join("\n");
+
+  assert.deepEqual(findExtensionLoadFailures(log), [
+    incidentLine,
+    "[extensions] Failed to load other-ext/index.ts: some other error",
+  ]);
+});
+
+test("extension load failure scan stays silent on clean and lookalike output", () => {
+  assert.deepEqual(findExtensionLoadFailures(""), []);
+  assert.deepEqual(findExtensionLoadFailures("boot-smoke: PASS\nGET /api/health 200"), []);
+  assert.deepEqual(findExtensionLoadFailures("extension load failure scan: none\n[extensions] loaded 3 packages"), []);
+  assert.deepEqual(findExtensionLoadFailures(undefined), []);
 });
 
 test("isolated child env strips inherited database and port controls", () => {

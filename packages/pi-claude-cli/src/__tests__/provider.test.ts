@@ -91,7 +91,7 @@ describe("provider registration (default export)", () => {
 
     // Dynamic import to get the default export
     const mod = await import("../../index");
-    mod.default(mockPi);
+    await mod.default(mockPi);
 
     expect(registerProvider).toHaveBeenCalledTimes(1);
     expect(registerProvider.mock.calls[0][0]).toBe("pi-claude-cli");
@@ -102,7 +102,7 @@ describe("provider registration (default export)", () => {
     const mockPi = { registerProvider, on: vi.fn() } as any;
 
     const mod = await import("../../index");
-    mod.default(mockPi);
+    await mod.default(mockPi);
 
     const config = registerProvider.mock.calls[0][1];
     expect(config.baseUrl).toBe("pi-claude-cli");
@@ -119,7 +119,7 @@ describe("provider registration (default export)", () => {
     const mockPi = { registerProvider, on: vi.fn() } as any;
 
     const mod = await import("../../index");
-    mod.default(mockPi);
+    await mod.default(mockPi);
 
     const config = registerProvider.mock.calls[0][1];
     expect(config.models.length).toBeGreaterThan(0);
@@ -137,7 +137,7 @@ describe("provider registration (default export)", () => {
     const mockPi = { registerProvider, on: vi.fn() } as any;
 
     const mod = await import("../../index");
-    mod.default(mockPi);
+    await mod.default(mockPi);
 
     const models = registerProvider.mock.calls[0][1].models;
     for (const id of ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]) {
@@ -163,7 +163,7 @@ describe("provider registration (default export)", () => {
     getModelsMock.mockReturnValueOnce([upstream]);
 
     const mod = await import("../../index");
-    mod.default(mockPi);
+    await mod.default(mockPi);
 
     const config = registerProvider.mock.calls[0][1];
     const upstreamRows = config.models.filter((model: { id: string }) => model.id === upstream.id);

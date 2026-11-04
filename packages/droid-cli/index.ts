@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
+import { getCurrentSystemPrompt, getCurrentTools, initPiAiTranscriptHelpers } from "./src/pi-ai-transcript.js";
 import {
   streamViaCli,
   discoverDroidModels,
@@ -135,14 +135,20 @@ function registerDroidProvider(pi: ExtensionAPI, models: DiscoveredModel[]) {
   });
 }
 
-export default function (pi: ExtensionAPI) {
+export default async function (pi: ExtensionAPI) {
   /*
   FNXC:CliRuntime 2026-06-21-18:43:
   Engine and dashboard startup must not start the local Droid CLI merely because the optional extension loaded. Register the provider synchronously with an empty model list, defer validation until an actual droid stream starts, and leave model discovery to explicit picker/status callers so boot with `useDroidCli` enabled still performs zero `droid` spawns.
 
   FNXC:CliRuntime 2026-06-21-12:00:
   Engine and dashboard startup must not wait for local Droid CLI probes. Every surviving validation/discovery helper remains fire-and-forget, bounded, non-interactive, and resolve-only so a missing or wedged `droid` binary cannot stall extension loading or a session start.
+
+  FNXC:PiAiTranscriptResolution 2026-11-04-09:44:
+  Awaiting the transcript-helper init here is module loading, not a CLI probe: it is memoized,
+  performs no subprocess work, and guarantees every later synchronous streamSimple call sees
+  the replay helpers.
   */
+  await initPiAiTranscriptHelpers();
 
   pi.on("session_start", async () => {
     const allTools = pi.getAllTools();

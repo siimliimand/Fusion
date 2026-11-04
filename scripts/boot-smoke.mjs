@@ -7,6 +7,7 @@
  *   2. `fn serve` boots a real HTTP server on an ephemeral port and
  *      GET /api/health returns 200 within the timeout.
  *   3. The server shuts down cleanly on SIGTERM.
+ *   4. No captured CLI output contains an `[extensions] Failed to load` line.
  *
  * Safety properties (see scripts/check-no-kill-4040.mjs and AGENTS.md):
  * (port-4040-allowlist: this file only ever AVOIDS the reserved ports — it
@@ -112,6 +113,21 @@ export function classifyInitFailure(init, projectMarkerExists) {
   if (/Detected unsettled top-level await/.test(output)) return "unsettled-top-level-await";
   if (!projectMarkerExists) return "missing-project-marker";
   return null;
+}
+
+/*
+ * FNXC:BootSmoke 2026-11-04-09:44 (FIX-9):
+ * Production logs repeated `[extensions] Failed to load packages/pi-claude-cli/index.ts: …`
+ * on every agent session (2026-11-03/04). The gate now fails whenever captured CLI output
+ * (help/init/serve) carries that line. Boundary: extension providers load per agent session
+ * (`createPiAgentSessionRaw`), and the smoke's serve runs `--paused` with no sessions, so this
+ * assertion is a tripwire for boot-path extension loads; the per-session load proof lives in
+ * the extension packages' loader regression tests (packages/pi-claude-cli, packages/droid-cli).
+ */
+export function findExtensionLoadFailures(output) {
+  return String(output ?? "")
+    .split("\n")
+    .filter((line) => line.includes("[extensions] Failed to load"));
 }
 
 function parsePortList(raw) {
@@ -331,6 +347,14 @@ async function bootAndVerify(attempt, registerCleanup) {
   }
   console.log("boot-smoke: `fn init` OK");
 
+  const preflightExtensionFailures = [
+    ...findExtensionLoadFailures(help.stdout),
+    ...findExtensionLoadFailures(initOutput),
+  ];
+  if (preflightExtensionFailures.length > 0) {
+    fail("CLI preflight output reported extension load failures", preflightExtensionFailures.join("\n"));
+  }
+
   const child = spawn(
     process.execPath,
     [
@@ -388,6 +412,11 @@ async function bootAndVerify(attempt, registerCleanup) {
     fail(err.message, stderrBuf);
   }
   console.log(`boot-smoke: GET /api/health 200 on :${port}`);
+
+  const serveExtensionFailures = findExtensionLoadFailures(stderrBuf);
+  if (serveExtensionFailures.length > 0) {
+    fail("server boot log reported extension load failures", serveExtensionFailures.join("\n"));
+  }
 
   // 3. Clean shutdown of OUR child only. The verdict requires BOTH that
   // SIGTERM was actually delivered (a server that died between the health

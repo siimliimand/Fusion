@@ -25,17 +25,19 @@ vi.mock("@earendil-works/pi-ai", () => ({
 
 import register from "../../index.js";
 
-function registerAndGetStreamSimple() {
-  const calls: Array<[string, { streamSimple: (...a: unknown[]) => unknown }]> = [];
-  const pi = {
-    registerProvider: (name: string, cfg: { streamSimple: (...a: unknown[]) => unknown }) => calls.push([name, cfg]),
-    on: vi.fn(),
-    getAllTools: () => [],
-    setActiveTools: vi.fn(),
-  } as never;
-  register(pi);
-  return calls[0][1].streamSimple;
-}
+  async function registerAndGetStreamSimple() {
+    const calls: Array<[string, { streamSimple: (...a: unknown[]) => unknown }]> = [];
+    const pi = {
+      registerProvider: (name: string, cfg: { streamSimple: (...a: unknown[]) => unknown }) => calls.push([name, cfg]),
+      on: vi.fn(),
+      getAllTools: () => [],
+      setActiveTools: vi.fn(),
+    } as never;
+    // FNXC:PiAiTranscriptResolution 2026-11-04-09:44: the factory awaits the transcript-helper
+    // init before registering, so the registration call is observed only after awaiting it.
+    await register(pi);
+    return calls[0][1].streamSimple;
+  }
 
 const MODEL = { id: "claude-sonnet-4-5" } as never;
 const CTX = { messages: [{ role: "user", content: "hi" }], tools: [] } as never;
@@ -48,31 +50,31 @@ describe("streamSimple kill-switch dispatch (U11/R9/R14)", () => {
     process.env.FUSION_CLAUDE_ACP_BRIDGE = saved.bridge;
   });
 
-  it("defaults to the -p path (streamViaCli) when the kill-switch is OFF", () => {
+  it("defaults to the -p path (streamViaCli) when the kill-switch is OFF", async () => {
     delete process.env.FUSION_CLAUDE_ACP;
-    const streamSimple = registerAndGetStreamSimple();
+    const streamSimple = await registerAndGetStreamSimple();
     streamSimple(MODEL, CTX, {});
     expect(streamViaCli).toHaveBeenCalledTimes(1);
     expect(streamViaAcp).not.toHaveBeenCalled();
   });
 
-  it("stays on -p when the flag is set but NO bridge path is provided", () => {
+  it("stays on -p when the flag is set but NO bridge path is provided", async () => {
     process.env.FUSION_CLAUDE_ACP = "1";
     delete process.env.FUSION_CLAUDE_ACP_BRIDGE;
-    const streamSimple = registerAndGetStreamSimple();
+    const streamSimple = await registerAndGetStreamSimple();
     streamSimple(MODEL, CTX, {});
     expect(streamViaCli).toHaveBeenCalledTimes(1);
     expect(streamViaAcp).not.toHaveBeenCalled();
   });
 
-  it("forwards current transcript tools to the CLI prompt adapter", () => {
+  it("forwards current transcript tools to the CLI prompt adapter", async () => {
     delete process.env.FUSION_CLAUDE_ACP;
     const tools = [{
       name: "fn_web_fetch",
       description: "Fetch a URL",
       parameters: { type: "object", properties: { url: { type: "string" } } },
     }];
-    const streamSimple = registerAndGetStreamSimple();
+    const streamSimple = await registerAndGetStreamSimple();
     streamSimple(MODEL, { messages: [{ role: "system", content: "Use Fusion tools", toolsAdded: tools }] } as never, {});
 
     expect(streamViaCli).toHaveBeenCalledWith(
@@ -82,10 +84,10 @@ describe("streamSimple kill-switch dispatch (U11/R9/R14)", () => {
     );
   });
 
-  it("dispatches to the ACP bridge when the flag AND a bridge path are set", () => {
+  it("dispatches to the ACP bridge when the flag AND a bridge path are set", async () => {
     process.env.FUSION_CLAUDE_ACP = "1";
     process.env.FUSION_CLAUDE_ACP_BRIDGE = "/abs/claude-code-cli-acp";
-    const streamSimple = registerAndGetStreamSimple();
+    const streamSimple = await registerAndGetStreamSimple();
     streamSimple(MODEL, CTX, {});
     expect(streamViaAcp).toHaveBeenCalledTimes(1);
     expect(streamViaCli).not.toHaveBeenCalled();

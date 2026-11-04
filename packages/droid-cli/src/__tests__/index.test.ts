@@ -68,7 +68,7 @@ describe("droid-cli extension entrypoint", () => {
     };
 
     const mod = await import("../../index");
-    const result = mod.default(mockPi as never);
+    const result = await mod.default(mockPi as never);
     await flushAsyncRegistration();
 
     expect(result).toBeUndefined();
@@ -103,7 +103,7 @@ describe("droid-cli extension entrypoint", () => {
     };
 
     const mod = await import("../../index");
-    mod.default(mockPi as never);
+    await mod.default(mockPi as never);
     const config = registerProvider.mock.calls[0]?.[1] as {
       streamSimple: (model: unknown, context: unknown, options?: Record<string, unknown>) => unknown;
     };
@@ -140,7 +140,7 @@ describe("droid-cli extension entrypoint", () => {
     };
 
     const mod = await import("../../index");
-    mod.default(mockPi as never);
+    await mod.default(mockPi as never);
     await flushAsyncRegistration();
 
     expect(sessionStartHandlers).toHaveLength(1);
@@ -164,7 +164,7 @@ describe("droid-cli extension entrypoint", () => {
     };
 
     const mod = await import("../../index");
-    mod.default(mockPi as never);
+    await mod.default(mockPi as never);
     const config = mockPi.registerProvider.mock.calls[0]?.[1] as {
       streamSimple: (model: unknown, context: unknown, options?: Record<string, unknown>) => unknown;
     };
@@ -199,7 +199,7 @@ describe("droid-cli extension entrypoint", () => {
     };
 
     const mod = await import("../../index");
-    mod.default(mockPi as never);
+    await mod.default(mockPi as never);
     await flushAsyncRegistration();
 
     const config = registerProvider.mock.calls[0]?.[1] as {
@@ -238,7 +238,7 @@ describe("droid-cli extension entrypoint", () => {
     };
 
     const mod = await import("../../index");
-    mod.default(mockPi as never);
+    await mod.default(mockPi as never);
     await flushAsyncRegistration();
 
     const config = registerProvider.mock.calls[0]?.[1] as {
