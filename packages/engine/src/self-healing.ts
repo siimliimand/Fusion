@@ -55,7 +55,7 @@ import { PRE_MERGE_STEPS_NOT_RUN_BLOCKER, loadWorkspaceConfig, type TaskMoveLane
   resolveLegacyWorktreesDirLayout,
 } from "@fusion/core";
 import { deriveStaleReviewCallbackAttemptId, finalizePlanningSegment, isLegacyWorkspaceWorktreeLayout, resolveWorkspaceTaskWorktreeDir } from "@fusion/core";
-import type { WorkspaceLandIntent } from "@fusion/core";
+import type { WorkspaceLandIntent, WorkflowWorkItem } from "@fusion/core";
 import { classifyStaleContentPark } from "./merge/stale-content-park.js";
 import type { MeshLeaseManager } from "./project/mesh-lease-manager.js";
 import { createLogger, schedulerLog } from "./logger.js";
@@ -754,6 +754,15 @@ async function resolveNoOpFinalizeGateIds(store: TaskStore, task: Task): Promise
 }
 export { classifyTransientMergeError } from "./errors/transient-merge-error-classifier.js";
 const MAX_STARVATION_DROPS = 3;
+/*
+FNXC:OrphanedWorkItems 2026-11-04-09:33 (FIX-3, SUBC-008):
+A workflow work item whose owning run died has no lifecycle writer left to terminalize it, yet every
+ACTIVE_WORKFLOW_WORK_ITEM_STATES reader (the reseed idle check included) treats it as live work. The
+janitor sweep therefore requires the item to be stale for max(30 min, 3× durable-agent heartbeat)
+before it acts: a shorter floor would fail rows behind ordinary queue lag or capacity suspension,
+which are scheduler-owned, not orphaned.
+*/
+const ORPHANED_WORK_ITEM_MIN_STALENESS_MS = 30 * 60_000;
 type AutoArchiveFailureReason = "lineage-children" | "task-live" | "dependents" | "not-found" | "unknown";
 
 function classifyAutoArchiveFailure(err: unknown): AutoArchiveFailureReason {
@@ -987,6 +996,13 @@ export class SelfHealingManager extends SelfHealingGitEvidence {
    */
   private strandedHoldContinuationNoActionAudited = new Set<string>();
   private principalHeldPlanningNoActionAudited = new Set<string>();
+  /*
+   * FNXC:OrphanedWorkItems 2026-11-04-09:35 (FIX-3):
+   * `task:reconcile-orphaned-work-item-no-action` is deduped per (taskId, workItemId, reason) so a
+   * candidate that stays liveness-vetoed for hours emits one diagnostic row, not one per sweep tick.
+   * Cleared on stop(), like the sibling no-action memos.
+   */
+  private orphanedWorkItemNoActionAudited = new Set<string>();
   /* FNXC:SymbolLock 2026-07-30-14:20: idle symbol-lock sweeps emit one no-action audit until a stale lock re-arms the diagnostic. */
   private symbolLockNoActionAudited = false;
   private maintenanceTickCounter = 0;
@@ -2004,6 +2020,14 @@ export class SelfHealingManager extends SelfHealingGitEvidence {
       // flight" to all of them (the merge gate included), which is the two-hour
       // stall-deadlock ride this sweep exists to prevent.
       { name: "reconcile-orphaned-pending-step-results", fn: () => this.reconcileOrphanedPendingStepResults().then(() => undefined) },
+      /*
+      FNXC:OrphanedWorkItems 2026-11-04-09:36 (FIX-3, SUBC-008):
+      Runs beside its sibling janitor sweep (FN-8492) and after `adopt-legacy-task-rows` because it
+      reasons about task state. A dead run's active work item silently vetoes post-merge-gate reseeds
+      and every other "is something already queued?" reader; failing it here is what makes the
+      manual SQL repair unnecessary.
+      */
+      { name: "reconcile-orphaned-active-work-items", fn: () => this.reconcileOrphanedWorkItems().then(() => undefined) },
       { name: "reconcile-unproven-review-approvals", fn: () => this.reconcileUnprovenReviewApprovals().then(() => undefined) },
       { name: "reconcile-merge-boundary-evidence-gaps", fn: () => this.reconcileMergeBoundaryEvidenceGaps().then(() => undefined) },
       /*
@@ -2228,6 +2252,9 @@ export class SelfHealingManager extends SelfHealingGitEvidence {
 
     this.finalizeUnprovenWarned.clear();
     this.strandedCompletedFailureProvenanceWarned.clear();
+    // FNXC:OrphanedWorkItems 2026-11-04-09:40 (FIX-3): a fresh process re-arms the deduped
+    // no-action diagnostic, matching the sibling FN-8141/FN-8592 memos above.
+    this.orphanedWorkItemNoActionAudited.clear();
     log.debug("Stopped");
   }
 
@@ -3113,6 +3140,10 @@ export class SelfHealingManager extends SelfHealingGitEvidence {
           Keep them adjacent and in this order.
           */
           { name: "reconcile-orphaned-pending-step-results", fn: () => this.reconcileOrphanedPendingStepResults() },
+          // FNXC:OrphanedWorkItems 2026-11-04-09:36 (FIX-3): steady-state half — a run can die
+          // mid-cycle without an engine restart (SUBC-008's cleanup orphaned its merge item 700 ms
+          // before it went runnable). Same budget and liveness rules as the startup step.
+          { name: "reconcile-orphaned-active-work-items", fn: () => this.reconcileOrphanedWorkItems() },
           { name: "reconcile-unproven-review-approvals", fn: () => this.reconcileUnprovenReviewApprovals() },
           { name: "reconcile-merge-boundary-evidence-gaps", fn: () => this.reconcileMergeBoundaryEvidenceGaps() },
           { name: "recover-failed-pre-merge-steps", fn: () => this.recoverReviewTasksWithFailedPreMergeSteps() },
@@ -8855,6 +8886,141 @@ export class SelfHealingManager extends SelfHealingGitEvidence {
       return repaired;
     } catch (error) {
       log.warn(`reconcileStrandedWorkflowContinuations failed: ${error instanceof Error ? error.message : String(error)}`);
+      return 0;
+    }
+  }
+
+  /**
+   * FNXC:OrphanedWorkItems 2026-11-04-09:38 (FIX-3, SUBC-008):
+   * Janitor for active workflow work items whose owning run is dead. SUBC-008's external-block
+   * cleanup tore its run down, and a merge-kind item went `runnable` 700 ms later; no writer ever
+   * terminalized it, so it sat active for ~22 h and silently vetoed the designed post-merge-gate
+   * reseed (`seedWorkspaceCodeReviewContinuationIfIdle` fails closed on ANY active item). Recovery
+   * needed a manual SQL `failed` write — this sweep is the engine-owned version of that repair.
+   *
+   * Candidate = state ∈ ACTIVE_WORKFLOW_WORK_ITEM_STATES (the due-poll query additionally requires
+   * an expired/absent lease and a passed `retryAfter`) AND the canonical liveness triple proves the
+   * owning run dead (no `activeSessionRegistry` surface, no `executingTaskLock`, task not executing)
+   * AND `updatedAt` is past max(30 min, 3× durable-agent heartbeat). The action per item is one
+   * transactional CAS-fenced `failed` transition, bounded by one MAX_STARVATION_DROPS budget per
+   * sweep so a pathological board cannot mass-terminalize in a single tick.
+   *
+   * Deliberate non-claims (each has its own owner): `manual-hold` items (operator-owned kind);
+   * user/operator-paused, deleted, and terminal-or-missing-task rows (`reconcileStrandedWorkflowContinuations`
+   * retires those); workspace tasks (FN-9056/FN-9059 reclaim with durable lease fencing); tasks a
+   * live merge owns (`getActiveMergeTaskId`, non-stale merge-active status); `kind:"merge"` items
+   * while a merge may still be pending on another node (`isMergePending` — absent oracle fails
+   * closed); and any task the liveness triple proves live — that arm emits the DEDUPED
+   * `task:reconcile-orphaned-work-item-no-action` audit and never touches the row.
+   *
+   * @returns Count of items actually transitioned to `failed`.
+   */
+  async reconcileOrphanedWorkItems(): Promise<number> {
+    try {
+      if (typeof this.store.listDueWorkflowWorkItems !== "function") return 0;
+      if (typeof this.store.transitionWorkflowWorkItem !== "function") return 0;
+      const settings = await this.store.getSettings();
+      // A paused engine must not terminalize queued work an operator stopped; the rows are still
+      // here (and still orphaned, if they are) when the engine resumes.
+      if (settings.globalPause === true || settings.enginePaused === true) return 0;
+      const now = Date.now();
+      const nowIso = new Date(now).toISOString();
+      const stalenessFloorMs = Math.max(ORPHANED_WORK_ITEM_MIN_STALENESS_MS, 3 * DEFAULT_AGENT_HEARTBEAT_INTERVAL_MS);
+      const activeMergeTaskId = this.options.getActiveMergeTaskId?.() ?? null;
+      const executingIds = this.options.getExecutingTaskIds?.() ?? new Set<string>();
+      const live = (taskId: string): boolean =>
+        activeSessionRegistry.pathsForTask(taskId).some((path) => activeSessionRegistry.isPathActive(path))
+        || executingTaskLock.has(taskId)
+        || executingIds.has(taskId)
+        || this.options.isTaskActive?.(taskId) === true;
+      const auditNoAction = async (
+        item: WorkflowWorkItem,
+        task: Pick<Task, "id" | "column">,
+        reason: "live-session",
+      ): Promise<void> => {
+        const key = `${task.id}:${item.id}:${reason}`;
+        if (this.orphanedWorkItemNoActionAudited.has(key)) return;
+        await emitBoundedRunAudit(this.store, {
+          taskId: task.id,
+          agentId: "self-healing",
+          runId: generateSyntheticRunId("reconcile-orphaned-work-item", task.id),
+          domain: "database",
+          mutationType: "task:reconcile-orphaned-work-item-no-action",
+          target: item.id,
+          // ids/fixed enums only — never run ids' prose, blocked reasons, or error text.
+          metadata: { taskId: task.id, workItemId: item.id, kind: item.kind, priorState: item.state, reason },
+        }, { log });
+        this.orphanedWorkItemNoActionAudited.add(key);
+      };
+      const due = await this.store.listDueWorkflowWorkItems({
+        now: nowIso,
+        states: [...ACTIVE_WORKFLOW_WORK_ITEM_STATES],
+      });
+      let failed = 0;
+      for (const item of due) {
+        // One budget per sweep, mirroring MAX_STARVATION_DROPS: bounded janitors stay janitors.
+        if (failed >= MAX_STARVATION_DROPS) {
+          log.warn(`reconcileOrphanedWorkItems: budget of ${MAX_STARVATION_DROPS} reached; remaining candidates wait for the next sweep`);
+          break;
+        }
+        // An operator-owned hold is designed to stop until a human acts.
+        if (item.kind === "manual-hold") continue;
+        const updatedAgoMs = now - new Date(item.updatedAt).getTime();
+        if (!Number.isFinite(updatedAgoMs) || updatedAgoMs < stalenessFloorMs) continue;
+        try {
+          const task = await this.store.getTask(item.taskId);
+          // Missing/deleted/terminal owners are the stranded-continuation sweep's retire territory.
+          if (!task || task.deletedAt != null) continue;
+          if (task.paused === true || task.userPaused === true) continue;
+          // Workspace items are lease-fenced by the FN-9059 machinery — never double-claim.
+          if (isWorkspaceTask(task)) continue;
+          // A live merge owns its items even when this process cannot see the run.
+          if (activeMergeTaskId === task.id) continue;
+          if (isMergeActiveStatus(task.status) && !isStaleMergeActiveStatus(task, { activeMergeTaskId, nowMs: now })) continue;
+          /*
+          FNXC:OrphanedWorkItems 2026-11-04-09:38 (FIX-3):
+          `isMergePending` is the cross-node oracle (queue, in-flight set, durable merge-dispatch
+          lease). A merge item must not be failed while another node could still be landing; with
+          no oracle wired we cannot prove that, so merge-kind items fail closed here.
+          */
+          if (item.kind === "merge" && await this.options.isMergePending?.(task.id) !== false) continue;
+          if (live(task.id)) {
+            await auditNoAction(item, task, "live-session");
+            continue;
+          }
+          const priorState = item.state;
+          /*
+          CAS-fence on the observed state: a dispatcher claiming the row between scan and write wins,
+          and the no-op return leaves its newer state untouched instead of failing live work.
+          Clearing the lease/blockedReason keeps the failed row readable as unowned evidence.
+          */
+          const written = await this.store.transitionWorkflowWorkItem(item.id, "failed", {
+            lastError: "orphaned-by-dead-run",
+            leaseOwner: null,
+            leaseExpiresAt: null,
+            blockedReason: null,
+            expectedState: priorState,
+          });
+          if (written.state !== "failed") continue;
+          failed += 1;
+          await this.store.logEntry(task.id, `[recovery] failed orphaned ${item.kind} work item ${item.id} (was '${priorState}') — its run is dead (no live session, no executing lock)`).catch(() => undefined);
+          await emitBoundedRunAudit(this.store, {
+            taskId: task.id,
+            agentId: "self-healing",
+            runId: generateSyntheticRunId("reconcile-orphaned-work-item", task.id),
+            domain: "database",
+            mutationType: "task:reconcile-orphaned-work-item",
+            target: item.id,
+            metadata: { taskId: task.id, workItemId: item.id, kind: item.kind, priorState, outcome: "failed" },
+          }, { log });
+        } catch (error) {
+          log.warn(`reconcileOrphanedWorkItems: failed for ${item.id}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+      if (failed > 0) log.log(`Failed ${failed} orphaned active workflow work item(s) whose owning run is dead`);
+      return failed;
+    } catch (error) {
+      log.warn(`reconcileOrphanedWorkItems failed: ${error instanceof Error ? error.message : String(error)}`);
       return 0;
     }
   }
