@@ -732,6 +732,28 @@ export function parseMissionAgentResponse(text: string): MissionInterviewRespons
     }
   }
 
+  /*
+  FNXC:InterviewEnvelopeNormalize 2026-11-04-09:34:
+  Models intermittently drop the {type, data} envelope; a bare question or
+  milestone payload is unambiguous, so wrap instead of failing the session.
+  The emitted diagnostic is a bounded counter (mission:interview-envelope-repaired,
+  fixed reason enum, ids/counts only) so model discipline is measurable without
+  recording any response content. Anything still ambiguous after this step keeps
+  the strict rejection below.
+  */
+  if (parsed && typeof parsed === "object" && !("data" in parsed)) {
+    const bare = parsed as Record<string, unknown>;
+    const looksLikeQuestion = typeof bare.id === "string" && typeof bare.question === "string";
+    const looksLikeMilestones = Array.isArray((bare as { milestones?: unknown }).milestones);
+    if (looksLikeQuestion) {
+      parsed = { type: "question", data: parsed };
+      diagnostics.warn("mission:interview-envelope-repaired", { operation: "parse-validate", repair: "question" });
+    } else if (looksLikeMilestones) {
+      parsed = { type: "complete", data: parsed };
+      diagnostics.warn("mission:interview-envelope-repaired", { operation: "parse-validate", repair: "milestones" });
+    }
+  }
+
   if (
     typeof parsed === "object" &&
     parsed !== null &&
