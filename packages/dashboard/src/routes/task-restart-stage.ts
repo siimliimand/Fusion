@@ -9,8 +9,35 @@ import {
   type Task,
   type TaskStore,
 } from "@fusion/core";
-import { isMergeActiveStatus, isStaleMergeActiveStatus, resolveColumnResumeNode, resumeMissingPostMergeGate } from "@fusion/engine";
+import { isMergeActiveStatus, isStaleMergeActiveStatus, resolveColumnResumeNode, resumeMissingPostMergeGate, type PostMergeGateResumeBlockReason } from "@fusion/engine";
 import { badRequest, conflict, notFound } from "../api-error.js";
+
+/*
+FNXC:RetryRefusalReasons 2026-11-04-10:12 (FIX-4, SUBC-008):
+The landed-verification retry used to throw ONE hard-coded conflict for every refused reseed, so an
+operator staring at an orphaned work item was told the gate was "pending, active, held, or already
+approved" — none of which was true, and the only recovery was waiting out the hourly backoff or raw
+SQL. Each machine reason now maps to the guard that actually fired. `not-due` is the only reason
+that keeps the original "landing proof is preserved" message, because it is the only reason that
+means the gate is genuinely approved/pending (an explicit operator Retry with a failed gate bypasses
+the backoff upstream and never produces "not-due"). The active-work-items message may promise
+"self-healing will fail it" because the FIX-3 sweep owns exactly that repair on this branch.
+*/
+const POST_MERGE_RECHECK_REFUSAL_MESSAGES: Record<PostMergeGateResumeBlockReason, string> = {
+  "merge-active": "Retry is unavailable while a merge is active",
+  "lease-fresh": "Post-merge verification recheck is blocked: a fresh checkout lease still owns this card; retry after it finishes",
+  "execution-live": "Post-merge verification recheck is blocked: the task is executing live and its run will reach the gate; retry after it finishes",
+  "finalize-blocker": "Post-merge verification recheck is blocked: the card carries an independent blocking status; resolve it first",
+  "active-work-items": "Post-merge verification recheck blocked by an active workflow work item that still owns the graph — self-healing will fail orphans; retry after",
+  "workflow-selection-changed": "Post-merge verification recheck is blocked: the task's workflow selection changed; the failed gate stays parked for reclassification",
+  "not-due": "Post-merge verification cannot be retried while pending, active, held, or already approved; landing proof is preserved",
+};
+
+function postMergeRecheckRefusalMessage(resumed: Extract<Awaited<ReturnType<typeof resumeMissingPostMergeGate>>, { outcome: "not-resumable" }>): string {
+  if (resumed.reason !== "active-work-items" || !resumed.workItem) return POST_MERGE_RECHECK_REFUSAL_MESSAGES[resumed.reason];
+  const { id, kind, state } = resumed.workItem;
+  return `Post-merge verification recheck blocked: active workflow work item ${id ?? "(unknown id)"} (${kind}, state ${state}) belongs to a dead run — self-healing will fail it; retry after`;
+}
 
 interface RestartTaskStageEngine {
   clearTaskPauseAbortState?: (taskId: string) => void | Promise<void>;
@@ -105,7 +132,7 @@ export async function restartTaskStage(deps: RestartTaskStageDeps): Promise<Rest
         if (isLiveMergeRestart(landedTask, deps)) throw conflict("Retry is unavailable while a merge is active");
         const resumed = await resumeMissingPostMergeGate(store, taskId, { manualRetry: true });
         if (resumed.outcome !== "resumed") {
-          throw conflict("Post-merge verification cannot be retried while pending, active, held, or already approved; landing proof is preserved");
+          throw conflict(postMergeRecheckRefusalMessage(resumed));
         }
         return store.getTask(taskId);
       };

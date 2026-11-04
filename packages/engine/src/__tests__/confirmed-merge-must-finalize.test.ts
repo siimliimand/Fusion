@@ -373,7 +373,7 @@ describe("missing post-merge continuation recovery", () => {
       if (patch) Object.assign(task, patch);
       return task;
     });
-    expect(await resumeMissingPostMergeGate(store, task.id)).toEqual({ outcome: "not-resumable" });
+    expect(await resumeMissingPostMergeGate(store, task.id)).toEqual({ outcome: "not-resumable", reason: "not-due" });
     expect(task.error).toContain("Post-merge verification needs remediation:");
     expect(task.userPaused).toBe(true);
     expect(store.seedWorkspaceCodeReviewContinuationIfIdle).not.toHaveBeenCalled();
@@ -385,8 +385,12 @@ describe("missing post-merge continuation recovery", () => {
     task.workflowStepResults = [{ ...rejection, priorAttempts: [rejection, rejection, rejection] }] as Task["workflowStepResults"];
     task.status = "failed";
     task.error = "Post-merge verification needs remediation: waiting for CI";
-    items.push({ kind: "task", state: "runnable" });
-    expect(await resumeMissingPostMergeGate(store, task.id)).toEqual({ outcome: "not-resumable" });
+    items.push({ id: "existing-run", kind: "task", state: "runnable" });
+    expect(await resumeMissingPostMergeGate(store, task.id)).toEqual({
+      outcome: "not-resumable",
+      reason: "active-work-items",
+      workItem: { id: "existing-run", kind: "task", state: "runnable" },
+    });
     expect(task.status).toBe("failed");
     expect(task.error).toContain("Post-merge verification needs remediation:");
   });
@@ -410,7 +414,7 @@ describe("missing post-merge continuation recovery", () => {
       if (persistFence?.expectedUpdatedAt === task.updatedAt && patch) Object.assign(task, patch);
       return snapshot;
     });
-    expect(await resumeMissingPostMergeGate(store, task.id)).toEqual({ outcome: "not-resumable" });
+    expect(await resumeMissingPostMergeGate(store, task.id)).toEqual({ outcome: "not-resumable", reason: "not-due" });
     expect(task).toMatchObject({ status: "failed", error: "Reset in progress", userPaused: true });
     expect(task.workflowStepResults).toEqual(original.workflowStepResults);
     expect(store.seedWorkspaceCodeReviewContinuationIfIdle).not.toHaveBeenCalled();
@@ -480,7 +484,7 @@ describe("missing post-merge continuation recovery", () => {
         reason: expect.stringContaining("post-merge evidence"),
       });
     }
-    await expect(resumeMissingPostMergeGate(store, task.id)).resolves.toEqual({ outcome: "not-resumable" });
+    await expect(resumeMissingPostMergeGate(store, task.id)).resolves.toEqual({ outcome: "not-resumable", reason: "not-due" });
 
     expect(task.column).toBe("in-review");
     expect(task.workflowStepResults).toEqual(before);
@@ -540,5 +544,60 @@ describe("missing post-merge continuation recovery", () => {
     await finalizeProvenAutoMergeTask({ store, taskId: task.id, source: "self-healing" });
     expect(store.logEntry).not.toHaveBeenCalled();
     expect(store.moveTask).not.toHaveBeenCalled();
+  });
+
+  /*
+  FNXC:RetryRefusalReasons 2026-11-04-10:20 (FIX-4, SUBC-008):
+  Each refused outcome now names the guard that fired. These pin the reason threading at the engine
+  boundary; the dashboard route maps them to operator-facing 409 messages.
+  */
+  it("names each fail-closed guard as the refusal reason", async () => {
+    const { task, store } = recoveryFixture();
+
+    // Fresh checkout lease: a live durable owner, not a gate problem.
+    Object.assign(task, { checkoutRunId: "checkout-run", checkoutLeaseRenewedAt: new Date().toISOString() });
+    await expect(resumeMissingPostMergeGate(store, task.id, { manualRetry: true }))
+      .resolves.toEqual({ outcome: "not-resumable", reason: "lease-fresh" });
+    delete (task as Partial<Task>).checkoutRunId;
+    delete (task as Partial<Task>).checkoutLeaseRenewedAt;
+
+    // Live execution owns the traversal.
+    executingTaskLock.tryClaim(task.id);
+    try {
+      await expect(resumeMissingPostMergeGate(store, task.id, { manualRetry: true }))
+        .resolves.toEqual({ outcome: "not-resumable", reason: "execution-live" });
+    } finally {
+      executingTaskLock.release(task.id);
+    }
+
+    // An independent blocking status is a finalize blocker, not a gate problem.
+    task.status = "awaiting-approval";
+    await expect(resumeMissingPostMergeGate(store, task.id, { manualRetry: true }))
+      .resolves.toEqual({ outcome: "not-resumable", reason: "finalize-blocker" });
+    task.status = null as unknown as Task["status"];
+
+    // An approved gate is genuinely not due — manualRetry cannot recheck approval.
+    task.workflowStepResults = [{ workflowStepId: "post-merge-verification", status: "passed", verdict: "APPROVE" }] as Task["workflowStepResults"];
+    await expect(resumeMissingPostMergeGate(store, task.id, { manualRetry: true }))
+      .resolves.toEqual({ outcome: "not-resumable", reason: "not-due" });
+    task.workflowStepResults = [];
+
+    // A changed workflow selection refuses rather than seeding an unrelated node.
+    store.seedWorkspaceCodeReviewContinuationIfIdle = vi.fn(async () => ({ seeded: false, reason: "workflow-selection-changed" })) as never;
+    await expect(resumeMissingPostMergeGate(store, task.id, { manualRetry: true }))
+      .resolves.toEqual({ outcome: "not-resumable", reason: "workflow-selection-changed" });
+  });
+
+  it("reports the blocking work item when the idle seed refuses for an active continuation", async () => {
+    const { task, store, items } = recoveryFixture();
+    task.workflowStepResults = [{ workflowStepId: "post-merge-verification", status: "failed", verdict: "REVISE", completedAt: new Date(Date.now() - 61 * 60_000).toISOString() }] as Task["workflowStepResults"];
+    items.push({ id: "orphan-item", kind: "merge", state: "runnable" });
+    await expect(resumeMissingPostMergeGate(store, task.id, { manualRetry: true }))
+      .resolves.toEqual({
+        outcome: "not-resumable",
+        reason: "active-work-items",
+        workItem: { id: "orphan-item", kind: "merge", state: "runnable" },
+      });
+    expect(store.logEntry).not.toHaveBeenCalled();
   });
 });

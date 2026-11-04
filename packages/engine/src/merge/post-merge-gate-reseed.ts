@@ -8,9 +8,11 @@ import {
   type WorkflowStepResult,
   type RequiredPostMergeEvidenceDecision,
   type Task,
+  type WorkflowWorkItemState,
 } from "@fusion/core";
 import { activeSessionRegistry, executingTaskLock } from "../agents/active-session-registry.js";
 import { createMergeWriteFence, type MergeWriteFence } from "./merge-write-fence.js";
+import { isMergeActiveStatus } from "./merge-active-status.js";
 import { isTaskExecutionLive } from "./merge-execution-exclusion.js";
 
 /**
@@ -23,6 +25,23 @@ import { isTaskExecutionLive } from "./merge-execution-exclusion.js";
  */
 const DEFAULT_CHECKOUT_LEASE_GRACE_MS = 10 * 60_000;
 const CHECKOUT_LEASE_STALENESS_MULTIPLIER = 3;
+
+/*
+FNXC:RetryRefusalReasons 2026-11-04-10:05 (FIX-4, SUBC-008):
+Single construction point for the refused outcome, so every fail-closed return below carries its
+guard's machine reason instead of collapsing back into an unexplained boolean.
+*/
+function notResumable(
+  reason: PostMergeGateResumeBlockReason,
+  workItem?: PostMergeGateResumeBlockedWorkItem,
+): PostMergeGateResumeResult {
+  return workItem === undefined ? { outcome: "not-resumable", reason } : { outcome: "not-resumable", reason, workItem };
+}
+
+function firstActiveWorkItem(items: Array<Pick<PostMergeGateResumeBlockedWorkItem, "id" | "kind" | "state">>): PostMergeGateResumeBlockedWorkItem | undefined {
+  const active = items.find((item) => ACTIVE_WORKFLOW_WORK_ITEM_STATES.includes(item.state as WorkflowWorkItemState));
+  return active ? { id: active.id ?? null, kind: active.kind, state: active.state } : undefined;
+}
 
 /**
  * FNXC:PostMergeRecovery 2026-10-01-06:55:
@@ -44,7 +63,32 @@ export function hasFreshCheckoutLease(
 
 export type PostMergeGateResumeResult =
   | { outcome: "resumed"; gateId: string }
-  | { outcome: "not-resumable" };
+  | { outcome: "not-resumable"; reason: PostMergeGateResumeBlockReason; workItem?: PostMergeGateResumeBlockedWorkItem };
+
+/*
+FNXC:RetryRefusalReasons 2026-11-04-10:05 (FIX-4, SUBC-008):
+Every fail-closed guard below used to collapse into one boolean, so the operator Retry door answered
+a single hard-coded conflict no matter which guard refused — during the incident the real blocker
+was an orphaned work item, and the message blamed the gate instead. This union names each guard so
+callers (the dashboard Retry route) can tell the operator the truth. The union is closed on purpose:
+new guards must map onto the closest existing reason or extend it deliberately, never silently reuse
+"not-due". `workItem` carries the one active item that blocks reseeding when `reason` is
+"active-work-items" (ids/enums only).
+*/
+export type PostMergeGateResumeBlockReason =
+  | "merge-active"
+  | "lease-fresh"
+  | "execution-live"
+  | "finalize-blocker"
+  | "active-work-items"
+  | "workflow-selection-changed"
+  | "not-due";
+
+export interface PostMergeGateResumeBlockedWorkItem {
+  id: string | null;
+  kind: string;
+  state: string;
+}
 
 const EXHAUSTED_PREFIX = "Post-merge verification needs remediation";
 
@@ -84,7 +128,7 @@ export async function resumeMissingPostMergeGate(
   options: { manualRetry?: boolean; fence?: MergeWriteFence } = {},
 ): Promise<PostMergeGateResumeResult> {
   const fence = options.fence ?? createMergeWriteFence({ taskId });
-  if (typeof store.seedWorkspaceCodeReviewContinuationIfIdle !== "function") return { outcome: "not-resumable" };
+  if (typeof store.seedWorkspaceCodeReviewContinuationIfIdle !== "function") return notResumable("not-due");
   let task: Task = await store.getTask(taskId);
   const settings = await store.getSettings();
   /*
@@ -93,27 +137,38 @@ export async function resumeMissingPostMergeGate(
   graph-owned verification of a landing already proven durable. This recovery seeds only the
   existing post-merge evidence node and retains pause, ownership, proof, and result-state fences.
   */
-  if (!task.mergeDetails?.mergeConfirmed || !task.updatedAt
-    || task.paused || task.userPaused || task.deletedAt
-    || settings.globalPause || settings.enginePaused
-    || getPostMergeFinalizeBlocker(task)
-    || hasFreshCheckoutLease(task, settings)
-    || isTaskExecutionLive(task.id, { activeSessionRegistry, executingTaskLock })) return { outcome: "not-resumable" };
+  /*
+  FNXC:RetryRefusalReasons 2026-11-04-10:05 (FIX-4, SUBC-008):
+  The guards keep their original order and semantics; they are decomposed only so the refused
+  outcome names the guard that actually fired. A finalize blocker caused by a merge-active status
+  reports "merge-active" — that guard and the route's own live-merge refusal share one definition
+  via isMergeActiveStatus, so the operator never gets two names for one condition.
+  */
+  if (!task.mergeDetails?.mergeConfirmed || !task.updatedAt) return notResumable("not-due");
+  if (task.paused || task.userPaused || task.deletedAt) return notResumable("not-due");
+  if (settings.globalPause || settings.enginePaused) return notResumable("not-due");
+  if (getPostMergeFinalizeBlocker(task)) {
+    return notResumable(isMergeActiveStatus(task.status) ? "merge-active" : "finalize-blocker");
+  }
+  if (hasFreshCheckoutLease(task, settings)) return notResumable("lease-fresh");
+  if (isTaskExecutionLive(task.id, { activeSessionRegistry, executingTaskLock })) return notResumable("execution-live");
 
   if (hasLegacyRecoveryFailure(task)) {
     // Old recovery marked waiting reviews failed. Clear only its owned diagnostic;
     // the gate result and completion timestamp still govern approval and retry timing.
     const snapshot = task;
     let cleared = false;
+    let clearRefusal: PostMergeGateResumeResult = notResumable("not-due");
     const updated = await fence.write("finalization", () => store.updateTaskAtomic(task.id, async (live) => {
       if (live.updatedAt !== snapshot.updatedAt || live.column !== snapshot.column
-        || live.status !== snapshot.status || live.error !== snapshot.error
-        || live.paused || live.userPaused || live.deletedAt
-        || !live.mergeDetails?.mergeConfirmed
-        || hasFreshCheckoutLease(live, settings)
-        || isTaskExecutionLive(live.id, { activeSessionRegistry, executingTaskLock })) return null;
+        || live.status !== snapshot.status || live.error !== snapshot.error) { clearRefusal = notResumable("not-due"); return null; }
+      if (live.paused || live.userPaused || live.deletedAt) { clearRefusal = notResumable("not-due"); return null; }
+      if (!live.mergeDetails?.mergeConfirmed) { clearRefusal = notResumable("not-due"); return null; }
+      if (hasFreshCheckoutLease(live, settings)) { clearRefusal = notResumable("lease-fresh"); return null; }
+      if (isTaskExecutionLive(live.id, { activeSessionRegistry, executingTaskLock })) { clearRefusal = notResumable("execution-live"); return null; }
       const items = await store.listWorkflowWorkItemsForTask(task.id);
-      if (items.some((item) => ACTIVE_WORKFLOW_WORK_ITEM_STATES.includes(item.state))) return null;
+      const activeItem = firstActiveWorkItem(items);
+      if (activeItem) { clearRefusal = notResumable("active-work-items", activeItem); return null; }
       fence.assertOwned("finalization");
       cleared = true;
       return { status: null as unknown as Task["status"], error: null as unknown as Task["error"] };
@@ -123,21 +178,29 @@ export async function resumeMissingPostMergeGate(
       expectedCheckoutNodeId: snapshot.checkoutNodeId ?? null,
       expectedCheckoutLeaseEpoch: snapshot.checkoutLeaseEpoch ?? 0,
     }));
-    if (!cleared || !updated || updated.status != null || updated.error != null) return { outcome: "not-resumable" };
+    if (!cleared || !updated || updated.status != null || updated.error != null) return clearRefusal;
     task = updated;
   }
 
   const decision = await getRequiredPostMergeEvidenceDecision(store, task);
   const manualRetry = options.manualRetry === true && decision.outcome === "blocked" && decision.reason === "failed";
-  if (decision.outcome === "finalizable" || (!manualRetry && !isPostMergeGateRecoveryDue(task, decision))) return { outcome: "not-resumable" };
+  /*
+  FNXC:RetryRefusalReasons 2026-11-04-10:05 (FIX-4, SUBC-008):
+  "not-due" is deliberately the reason for both arms: an approved (or absent) gate and a
+  backoff-gated rejection both mean "nothing is due for recheck right now". An operator Retry with a
+  failed gate never reaches this line — manualRetry bypasses the backoff — so this reason reaches the
+  dashboard only for the approved/pending gate shapes.
+  */
+  if (decision.outcome === "finalizable" || (!manualRetry && !isPostMergeGateRecoveryDue(task, decision))) return notResumable("not-due");
   const selection = await store.getTaskWorkflowSelectionAsync(task.id);
   const resolved = await resolveWorkflowIrForTaskWithProvenance(store, task.id);
-  if (resolved.source === "default" && !resolved.selectionAbsent) return { outcome: "not-resumable" };
+  if (resolved.source === "default" && !resolved.selectionAbsent) return notResumable("workflow-selection-changed");
   const { ir } = resolved;
   const node = ir.version === "v2" ? ir.nodes.find((candidate) => candidate.id === decision.gateId) : undefined;
-  if (!node) return { outcome: "not-resumable" };
+  if (!node) return notResumable("workflow-selection-changed");
 
   const items = await store.listWorkflowWorkItemsForTask(task.id);
+  const activeItem = firstActiveWorkItem(items);
   const seeded = await fence.write("finalization", () => store.seedWorkspaceCodeReviewContinuationIfIdle({
     taskId: task.id,
     nodeId: node.id,
@@ -152,7 +215,18 @@ export async function resumeMissingPostMergeGate(
     expectedWorkflowSelection: selection ?? null,
     expectedTaskUpdatedAt: task.updatedAt,
   }));
-  if (!seeded?.seeded) return { outcome: "not-resumable" };
+  /*
+  FNXC:RetryRefusalReasons 2026-11-04-10:05 (FIX-4, SUBC-008):
+  The seeder's internal reasons are threaded, not collapsed. `active-continuation` maps to
+  "active-work-items" with the pre-seed read's first active item as evidence (the seeder itself does
+  not name the blocker on a bail); `task-state-changed` is a lost eligibility race, which is
+  "not-due" for the caller — the next invocation re-derives everything.
+  */
+  if (!seeded?.seeded) {
+    if (seeded?.reason === "active-continuation") return notResumable("active-work-items", activeItem);
+    if (seeded?.reason === "workflow-selection-changed") return notResumable("workflow-selection-changed");
+    return notResumable("not-due");
+  }
   await fence.write("log", () => store.logEntry(task.id, `[post-merge] ${decision.outcome === "resumable" ? "Resuming missing verification" : "Rechecking rejected evidence"} at '${node.id}'; already-landed implementation and merge will not run again.`));
   return { outcome: "resumed", gateId: node.id };
 }
