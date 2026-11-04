@@ -134,18 +134,23 @@ Every task shows its plan, its reviews, its diffs, and its file changes in real 
 <!--
 FNXC:Docs 2026-07-15-00:00:
 README must surface PostgreSQL-default storage and recently shipped operator surfaces so the public front door matches the shipped product. Legacy SQLite is a one-time migration input only; feature claims below remain grounded in release notes and linked product docs rather than new showcase media.
+
+FNXC:Docs 2026-11-04-14:39:
+Renewal pass against the 0.78 line. Verified against this repository (not upstream release notes): the built-in workflow catalog now includes non-coding flows (Brainstorming, Design, Marketing, Lead generation) plus Coding (Ideas)/Review-gated variants (packages/core/src/workflows/builtin-workflows.ts); the OAuth/API-key provider catalog includes GitHub Copilot, Meta (Muse), Minimax, OpenRouter, and Antigravity (packages/dashboard/src/routes/auth-provider-catalog.ts); multi-repository Workspaces, MCP, Computer Use, Task Evaluations, and Signals Connectors all ship with canonical docs pages. Task archiving is intentionally KEPT in this fork (unlike upstream's removal), so board copy still says archive actions.
 -->
 
 |  |  |
 |---|---|
 | 🧠 **AI planning** | Describe a task in plain language. Planning agents turn it into a `PROMPT.md` plan with steps, file scope, and acceptance criteria. |
-| 🔁 **Selectable workflows** | Built-ins cover coding, quick fixes, review-heavy work, stepwise execution, plugin-gated Compound Engineering, and PR lifecycle fragments. Pick a workflow per task or author custom ones in the [Workflow Editor](./docs/workflow-editor.md). |
+| 🔁 **Selectable workflows** | Built-ins cover coding (auto, ideas, review-gated, stepwise), quick fixes, review-heavy work, plugin-gated Compound Engineering, PR lifecycle fragments, and non-coding flows — Brainstorming, Design, Marketing, Lead generation. Pick a workflow per task or author custom ones in the [Workflow Editor](./docs/workflow-editor.md). |
 | 🛡️ **Planner oversight** | Per-task or per-workflow oversight level (`off` / `observe` / `steer` / `autonomous`) governs how closely a planner overseer watches and intervenes — merge/PR and destructive actions always require explicit human confirmation. See [Settings Reference](./docs/settings-reference.md#workflow-settings) and [Dashboard Guide](./docs/dashboard-guide.md). |
 | 🌳 **Worktree isolation** | Each task runs in its own branch and worktree (`fusion/{task-id}`). Parallel tasks. Zero conflicts. Optional [worktrunk](https://github.com/max-sixty/worktrunk) delegation via [`worktrunk.enabled`](./docs/settings-reference.md#worktree-backend-settings) (see [WorktreeBackend abstraction](./docs/architecture.md#worktreebackend-abstraction)). |
+| 🗂️ **Multi-repo workspaces** | One task that spans several repositories: per-repository execution and land, workspace leases, recovery, and revert. ([Workspaces](./docs/workspaces.md)) |
+| 🔌 **MCP servers** | Wire Model Context Protocol servers into your agents — per-server secret references, validation, and import/export. ([MCP](./docs/mcp.md)) |
 | 🗄️ **PostgreSQL by default** | Fusion uses zero-config embedded PostgreSQL for local runtime metadata. Legacy SQLite files are one-time migration inputs only; use a shared external database for [multi-project and multi-node](./docs/multi-project.md) setups. ([Storage](./docs/storage.md)) |
 | ⚡ **Smart merge controls** | Passing every gate? Fusion squash-merges and moves on. Opt into manual approval anywhere, inherit the live global auto-merge default, or set explicit per-task auto/manual overrides. |
 | 🛰️ **Multi-node mesh** | Laptop, Mac mini, Linux server, cloud VM, phone — all synced. Desktop, mobile, web. |
-| 🧩 **Any model** | Anthropic, OpenAI, Ollama, Google Generative AI, Z.ai, Kimi K3, local runtimes, and user-defined [custom providers](./docs/dashboard-guide.md#custom-providers). Local and cloud coexist, with workflow model/fallback lanes configurable per project. |
+| 🧩 **Any model** | Anthropic, OpenAI, Codex, GitHub Copilot, Google Generative AI, Grok, Z.ai, Kimi, Meta Muse, Minimax, OpenRouter, Google Antigravity CLI, Ollama and local runtimes, plus user-defined [custom providers](./docs/dashboard-guide.md#custom-providers). Local and cloud coexist, with workflow model/fallback lanes configurable per project. |
 | 🏢 **Agent companies** | Import pre-built teams — 440+ agents across 16 companies — and run them autonomously for weeks. |
 | 📬 **Inter-agent messaging** | Built-in mailbox between agents. Delegate, clarify, coordinate; engineer-role agents can opt into backlog auto-claim when you want implementation help beyond executor-only pickup. |
 | 🗨️ **Agent chat** | Direct chat, task chat that proactively narrates step progress, failures, and review outcomes, attachments, in-chat question cards, resumable streams, and experimental multi-agent Chat Rooms where mentioned members respond directly and ambient members can join up to a cap. ([Chat docs](./docs/dashboard-guide.md#chat-view)) |
@@ -386,7 +391,7 @@ Fusion now exposes workflow selection and authoring as public product surfaces, 
 Fusion workflows define how a task moves from idea to delivery. The default coding path is still the familiar **Plan/Triage → Execute → Workflow steps → Review → Merge** loop, but the policy now lives in a selectable workflow rather than being only hard-coded engine behavior.
 
 - **Select per task:** choose a workflow from the dashboard task/board workflow controls, or assign one through `fn_workflow_select` / `workflow_id` when creating tasks.
-- **Built-in catalog:** Coding (`builtin:coding`), Quick fix (`builtin:quick-fix`), Review-heavy (`builtin:review-heavy`), Compound engineering (`builtin:compound-engineering`, plugin-gated), Stepwise coding (`builtin:stepwise-coding`), and the PR lifecycle (`builtin:pr-workflow`, a reusable PR graph fragment).
+- **Built-in catalog:** Coding (`builtin:coding`), Coding (Ideas) (`builtin:coding-ideas`), Quick fix (`builtin:quick-fix`), Review-heavy (`builtin:review-heavy`), Review-gated coding (`builtin:review-gated-coding`), Stepwise coding (`builtin:stepwise-coding`), Compound engineering (`builtin:compound-engineering`, plugin-gated), and the PR lifecycle (`builtin:pr-workflow`, a reusable PR graph fragment) — plus non-coding flows: Brainstorming (`builtin:brainstorming`), Design (`builtin:design`), Marketing (`builtin:marketing`), and Lead generation (`builtin:lead-generation`).
 - **Customize safely:** inspect built-ins, duplicate them, or author custom workflows in the visual [Workflow Editor](./docs/workflow-editor.md). Workflow-specific settings cover model lanes, review/approval policy, step execution knobs, task fields, and columns.
 
 Read [Workflow Steps](./docs/workflow-steps.md) for runtime semantics, built-in workflow behavior, and workflow-step templates; read [Workflow Editor](./docs/workflow-editor.md) for the dashboard authoring guide.
@@ -496,16 +501,21 @@ npx companies.sh add paperclipai/companies/gstack
 | [Dashboard Guide](./docs/dashboard-guide.md) | Board/list views, chat, workflow editor, git manager, settings, and UI tools |
 | [Task Management](./docs/task-management.md) | Task lifecycle, prompt specs, comments, archiving, and GitHub integration |
 | [CLI Reference](./docs/cli-reference.md) | Full `fn` command and daemon reference |
+| [Computer Use](./docs/computer-use.md) | `fn computer` desktop-app discovery, snapshots, actions, and permissions |
 | [Settings Reference](./docs/settings-reference.md) | Global/project settings, model hierarchy, workflow settings, and custom providers |
+| [MCP](./docs/mcp.md) | Model Context Protocol server configuration, secret references, validation, and import/export |
 | [Workflow Steps](./docs/workflow-steps.md) | Workflow runtime, built-in workflows, gates, templates, and phases |
 | [Workflow Editor](./docs/workflow-editor.md) | Visual authoring, importing/exporting, custom fields/columns/settings, and mobile editor |
 | [Research](./docs/research.md) | Bounded research runs, findings, exports, and task integration |
+| [Task Evaluations](./docs/evals.md) | Eval scoring contract, evidence persistence, score categories, and evaluation pipeline |
 | [Agents](./docs/agents.md) | Agent management, spawning, heartbeat, and mailbox workflows |
 | [Missions](./docs/missions.md) | Mission hierarchy, planning, autopilot, and validation contracts |
 | [Plugin Management](./docs/plugin-management.md) | Discovering, installing, enabling, configuring, and troubleshooting plugins |
 | [Plugin Authoring](./docs/PLUGIN_AUTHORING.md) | Building plugins with lifecycle hooks, routes, tools, runtimes, and dashboard surfaces |
 | [Remote Access](./docs/remote-access.md) | Tokenized remote dashboard access, Tailscale/Cloudflare setup, and troubleshooting |
+| [Signals Connectors](./docs/signals-connectors.md) | HMAC-signed external signal connectors (Sentry, Datadog, PagerDuty, generic webhooks) |
 | [Multi-Project](./docs/multi-project.md) | Central registry, isolation modes, and migration paths |
+| [Workspaces (Multi-Repository)](./docs/workspaces.md) | Multi-repo setup, per-repository execution and land, recovery, revert, and archive cleanup |
 | [Storage](./docs/storage.md) | PostgreSQL runtime storage, migration compatibility, and file-backed payloads |
 | [Docker](./docs/docker.md) | Container deployment |
 
@@ -516,7 +526,7 @@ npx companies.sh add paperclipai/companies/gstack
 - **AI Planning** — Planning agent generates detailed `PROMPT.md` with steps, file scope, and acceptance criteria
 - **Step-by-step Execution** — Plan → Review → Execute → Review cycle for each task step, with graph-mode workflows able to model per-step parse/execute/review/rework explicitly
 - **Git Worktree Isolation** — Each task runs in its own worktree (`fusion/{task-id}` branch)
-- **Selectable workflows** — Pick Coding, Quick fix, Review-heavy, Stepwise coding, plugin-gated Compound Engineering, custom workflows, or PR lifecycle fragments where appropriate ([overview](#workflow-overview); [Workflow Steps](./docs/workflow-steps.md#workflow-overview))
+- **Selectable workflows** — Pick Coding, Quick fix, Review-heavy, Stepwise coding, plugin-gated Compound Engineering, non-coding flows (Brainstorming, Design, Marketing, Lead generation), custom workflows, or PR lifecycle fragments where appropriate ([overview](#workflow-overview); [Workflow Steps](./docs/workflow-steps.md#workflow-overview))
 - **Visual Workflow Editor** — Inspect read-only built-ins, duplicate/customize workflows, and edit graph nodes, columns, task fields, typed settings, and per-project values ([Workflow Editor](./docs/workflow-editor.md))
 - **Workflow Steps** — Configurable quality gates (pre-merge: blocks merge; post-merge: informational), plus workflow-declared optional steps such as opt-in [Browser Verification](./docs/workflow-steps.md#workflow-declared-optional-steps-optional-group-nodes)
 - **Workflow-native policy** — Fast-mode planning (`leanPlanning` / `autoApproveSpec`), typed triage thresholds, review/approval, step execution, and model/fallback lanes are workflow settings, not hard-coded engine constants ([Settings Reference](./docs/settings-reference.md#workflow-native-triage-policy-settings); [workflow settings](./docs/settings-reference.md#workflow-settings))
@@ -525,6 +535,8 @@ npx companies.sh add paperclipai/companies/gstack
 - **Dashboard** — Real-time kanban/list/graph views, a project Overview with local codebase token estimate and on-disk size, agent management, terminal, git manager, mission planner, chat, workflow editor, custom provider setup, and one-click update action
 - **Missions** — Hierarchical planning (Mission → Milestone → Slice → Feature → Task) with autopilot, validation contracts, fix-feature retries, mission-goal linking, and blocked-handoff semantics
 - **Multi-Project** — Manage multiple projects from a single installation with project isolation
+- **Multi-Repository Workspaces** — One task across several repositories, with per-repository execution and land, workspace leases, recovery, and revert ([Workspaces](./docs/workspaces.md))
+- **MCP** — Connect Model Context Protocol servers for agents, with secret references, validation, and import/export ([MCP](./docs/mcp.md))
 - **Custom Providers** — Add OpenAI-compatible, OpenAI Responses, Anthropic-compatible, or Google Generative AI providers; saved models appear in Project Models and workflow model dropdowns ([Dashboard Guide](./docs/dashboard-guide.md#custom-providers); [settings shape](./docs/settings-reference.md#customproviders))
 - **Smart merge controls** — Global auto-merge stays live for default tasks, while explicit per-task overrides can force auto/manual behavior ([Settings Reference](./docs/settings-reference.md#project-settings))
 - **Inter-Agent Messaging** — Built-in messaging for coordination between agents and users; engineer-role agents can opt into backlog auto-claim for implementation tasks ([Settings Reference](./docs/settings-reference.md#project-settings))
@@ -536,6 +548,8 @@ Fusion supports OAuth-based authentication for AI providers configured via **Set
 
 - **Anthropic (Claude)** — Uses a pasted authorization-code flow in Settings/onboarding: sign in, then paste the final redirect URL (or code) back into Fusion to complete login
 - **OpenAI Codex** — Uses the same pasted authorization-code flow with secure state validation
+- **GitHub Copilot** — Sign in with your GitHub Copilot subscription from Settings → Authentication
+- **Meta Muse** — Sign in via OAuth, or supply a Meta Muse API key
 - **Factory AI — via Droid CLI** *(optional)* — requires local Droid CLI install + `droid auth login`; detection follows the effective runtime binary path (default `droid`, or plugin `droidBinaryPath` when configured), then enable in **Settings → Authentication** and restart Fusion
 - **llama.cpp — via HTTP server** *(optional)* — configure your llama.cpp server URL (default `http://127.0.0.1:8080`) and optional API key, then enable in **Settings → Authentication**
 - **Other providers** — Authenticate via API key entry in Settings (including Google/Gemini API key, Google Generative AI, Vertex, and Cloud Code aliases)
