@@ -41,6 +41,7 @@ Events that close a task's delivery: blocked/advanced completion parks, already-
 | `task:auto-recover-stale-merger-status` | Self-healing clears a stale merger status left on a finalize path. |
 | `task:merge-admission-deferred-live-execution` | Merge admission found a live executor session, execution lock, or active task signal and deferred without parking the task. Metadata contains task ID plus fixed source, signal, and outcome values only. |
 | `task:reconcile-confirmed-merge-checklist` | A confirmed merge reconciled stale non-terminal checklist steps or pending pre-merge results before terminal finalization. Metadata contains task ID, source, counts, prior column, and fixed outcome only. |
+| `merge:confirmed-merge-reconciled` | A merge confirmation whose recorded SHA is not an ancestor of its landing branch is reconciled: a same-tree commit rewrites the recorded SHA (`content-match`), a true phantom is un-confirmed and the merge re-opened in-column (`reopened`), or the bounded attempt budget parks the card (`exhausted`). Metadata is ids/SHAs/fixed outcomes only (`taskId`, `recordedSha`, `branch`, `outcome`, `attempt`) via the FN-9175 bounded seam, emitted from push recovery, finalization, and the self-healing phantom-confirmation sweep. |
 
 ## Self-healing reconciliation events
 

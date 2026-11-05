@@ -79,7 +79,7 @@ import { isTaskExecutionLive } from "./merge/merge-execution-exclusion.js";
 import { isMergeActiveStatus } from "./merge/merge-active-status.js";
 import { isPostMergeGateRecoveryDue, resumeMissingPostMergeGate } from "./merge/post-merge-gate-reseed.js";
 import { captureMergeContentDescriptor } from "./merge/merge-content-capture.js";
-import { resolveIntegrationBranch } from "./merge/integration-branch.js";
+import { resolveIntegrationBranch, resolveMergeConfirmedGateBranch } from "./merge/integration-branch.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { InProcessRuntime } from "./runtimes/in-process-runtime.js";
@@ -394,46 +394,14 @@ export async function verifyMergeConfirmedReachability(args: {
 }
 
 /*
-FNXC:PostMergeLandingTarget 2026-11-04-09:53 (FIX-11, SUBC-013):
-Target-first resolution of the merge-confirmed gate's audit branch. The recorded
-`mergeDetails.mergeTargetBranch` (where the landing actually went) is authoritative;
-`resolveIntegrationBranch` (project default) is ONLY the fallback for legacy rows that
-lack a recorded target. Precedence mirrors the fast-path caller's existing chain, with
-the literal "main" tail replaced by the resolved project default so a configured
-`integrationBranch` setting is honored for legacy rows too. Workspace tasks are out of
-scope: their per-repository landings own their own evidence records (FN-9059 leases),
-and the root-cwd commitSha does not describe a single landing target (Phase C B2).
+FNXC:PostMergeLandingTarget 2026-11-05-21:01 (KB-005):
+`resolveMergeConfirmedGateBranch` and `MergeConfirmedGateBranch` MOVED to
+`./merge/integration-branch.js` so `recoverConfirmedMergePush` can reuse the precedence chain
+for the reconciliation fallback without importing project-engine.ts (which would be circular).
+This re-export keeps every existing importer — including the fast-path caller below and
+post-merge-target-branch.test.ts — source-compatible.
 */
-export interface MergeConfirmedGateBranch {
-  /** The branch the reachability gate must audit. */
-  branch: string;
-  /** Which input supplied the branch — diagnostic, not behavior. */
-  source: "branch-group-integration" | "recorded-merge-target" | "task-base-branch" | "project-default";
-  /** True when the recorded target exists and differs from the project default. */
-  divergedFromProjectDefault: boolean;
-}
-
-export function resolveMergeConfirmedGateBranch(input: {
-  routedFastPathTarget?: string | null;
-  recordedTargetBranch?: string | null;
-  taskBaseBranch?: string | null;
-  projectDefaultBranch?: string | null;
-}): MergeConfirmedGateBranch {
-  const routed = input.routedFastPathTarget?.trim() || "";
-  const recorded = input.recordedTargetBranch?.trim() || "";
-  const base = input.taskBaseBranch?.trim() || "";
-  const projectDefault = input.projectDefaultBranch?.trim() || "main";
-  if (routed) {
-    return { branch: routed, source: "branch-group-integration", divergedFromProjectDefault: !!recorded && recorded !== projectDefault };
-  }
-  if (recorded) {
-    return { branch: recorded, source: "recorded-merge-target", divergedFromProjectDefault: recorded !== projectDefault };
-  }
-  if (base) {
-    return { branch: base, source: "task-base-branch", divergedFromProjectDefault: false };
-  }
-  return { branch: projectDefault, source: "project-default", divergedFromProjectDefault: false };
-}
+export { resolveMergeConfirmedGateBranch, type MergeConfirmedGateBranch } from "./merge/integration-branch.js";
 
 /*
 FNXC:PostMergeLandingTarget 2026-11-04-09:53 (FIX-11, SUBC-013):

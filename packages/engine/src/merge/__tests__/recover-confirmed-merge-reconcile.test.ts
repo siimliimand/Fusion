@@ -147,6 +147,11 @@ describe("mergeConfirmed reconciliation (recorded SHA not on target)", () => {
       expect(task.mergeDetails?.pushRecovery?.pushedAt).toBeTruthy();
       expect(await git(["rev-parse", "refs/heads/main"], remote)).toBe(mainSideSha);
       expect(reconcileAudits(store.recordRunAuditEvent, "content-match")).toHaveLength(1);
+      expect(reconcileAudits(store.recordRunAuditEvent, "content-match")[0].metadata).toMatchObject({
+        taskId: "FN-SUBC",
+        recordedSha: phantomLandedSha,
+        branch: "main",
+      });
       expect(store.replaceActiveTaskWorkflowContinuation).not.toHaveBeenCalled();
       expect(store.logEntry).toHaveBeenCalledWith(
         "FN-SUBC",
@@ -170,7 +175,18 @@ describe("mergeConfirmed reconciliation (recorded SHA not on target)", () => {
       await git(["update-ref", "-d", "refs/heads/fusion/fn-subc"]);
       await execute("git", ["remote", "add", "origin", remote], { cwd: local });
       const settings = { autoMerge: true, pushAfterMerge: true } as Settings;
-      const task = fixtureTask({}, { commitSha: phantomLandedSha });
+      // Seed the false-landing fields the reconciliation must now also drop (KB-005): mergedAt and
+      // the stat/no-op attribution fields are part of the poisoned proof, not just the SHA.
+      const task = fixtureTask({}, {
+        commitSha: phantomLandedSha,
+        mergedAt: "2026-11-01T00:00:00.000Z",
+        landedFiles: ["impl.txt"],
+        filesChanged: 1,
+        insertions: 1,
+        deletions: 0,
+        noOpVerifiedShortCircuit: true,
+        landedFilesAttributionRestricted: true,
+      });
       const store = fixtureStore(local, task, settings);
 
       await recoverConfirmedMergePush(store.raw, task, settings);
@@ -178,6 +194,15 @@ describe("mergeConfirmed reconciliation (recorded SHA not on target)", () => {
       // The false confirmation is cleared with the reconciliation record; the false SHA is gone.
       expect(task.mergeDetails?.mergeConfirmed).toBe(false);
       expect(task.mergeDetails?.commitSha).toBeUndefined();
+      // FNXC:MergeConfirmationReconcile 2026-11-05-21:01 (KB-005): the un-confirm is TRUTHFUL —
+      // every false-landing field the FN-5627 fast-path clears is dropped here too.
+      expect(task.mergeDetails?.mergedAt).toBeUndefined();
+      expect(task.mergeDetails?.landedFiles).toBeUndefined();
+      expect(task.mergeDetails?.filesChanged).toBeUndefined();
+      expect(task.mergeDetails?.insertions).toBeUndefined();
+      expect(task.mergeDetails?.deletions).toBeUndefined();
+      expect(task.mergeDetails?.noOpVerifiedShortCircuit).toBeUndefined();
+      expect(task.mergeDetails?.landedFilesAttributionRestricted).toBeUndefined();
       expect(task.mergeDetails?.reconciliation).toMatchObject({
         reason: "recorded-sha-not-on-target",
         recordedSha: phantomLandedSha,
@@ -199,7 +224,14 @@ describe("mergeConfirmed reconciliation (recorded SHA not on target)", () => {
         "FN-SUBC",
         "Auto-recovery: recorded landing SHA was never on main; merge re-opened",
       );
-      expect(reconcileAudits(store.recordRunAuditEvent, "reopened")).toHaveLength(1);
+      const reopened = reconcileAudits(store.recordRunAuditEvent, "reopened");
+      expect(reopened).toHaveLength(1);
+      expect(reopened[0].metadata).toMatchObject({
+        taskId: "FN-SUBC",
+        recordedSha: phantomLandedSha,
+        branch: "main",
+        outcome: "reopened",
+      });
 
       // SYMPTOM VERIFICATION: a scripted landing after the re-open completes the loop with a NEW
       // landed SHA — the re-opened merge is drivable end to end (merger lands, proof reconciles).
@@ -242,6 +274,7 @@ describe("mergeConfirmed reconciliation (recorded SHA not on target)", () => {
       expect(exhausted[0].metadata).toMatchObject({
         taskId: "FN-SUBC",
         recordedSha: phantomSha,
+        branch: "main",
         attempt: MAX_MERGE_CONFIRMATION_RECONCILE_ATTEMPTS,
       });
     } finally {

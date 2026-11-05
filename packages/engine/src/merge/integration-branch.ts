@@ -2,6 +2,52 @@ import { exec, execSync } from "node:child_process";
 import { promisify } from "node:util";
 import { selectIntegrationBranch, type ProjectSettings } from "@fusion/core";
 
+/*
+FNXC:PostMergeLandingTarget 2026-11-05-21:01 (KB-005, moved from project-engine.ts):
+Target-first resolution of the merge-confirmed gate's audit branch. The recorded
+`mergeDetails.mergeTargetBranch` (where the landing actually went) is authoritative;
+`resolveIntegrationBranch` (project default) is ONLY the fallback for legacy rows that
+lack a recorded target. Precedence mirrors the fast-path caller's existing chain, with
+the literal "main" tail replaced by the resolved project default so a configured
+`integrationBranch` setting is honored for legacy rows too. Workspace tasks are out of
+scope: their per-repository landings own their own evidence records (FN-9059 leases),
+and the root-cwd commitSha does not describe a single landing target (Phase C B2).
+KB-005 relocates the resolver here (the neutral branch-resolution module) so
+`recoverConfirmedMergePush` can reuse it for the reconciliation fallback WITHOUT importing
+project-engine.ts (the reverse import would be circular); project-engine.ts re-exports
+both names so existing importers stay source-compatible.
+*/
+export interface MergeConfirmedGateBranch {
+  /** The branch the reachability gate must audit. */
+  branch: string;
+  /** Which input supplied the branch — diagnostic, not behavior. */
+  source: "branch-group-integration" | "recorded-merge-target" | "task-base-branch" | "project-default";
+  /** True when the recorded target exists and differs from the project default. */
+  divergedFromProjectDefault: boolean;
+}
+
+export function resolveMergeConfirmedGateBranch(input: {
+  routedFastPathTarget?: string | null;
+  recordedTargetBranch?: string | null;
+  taskBaseBranch?: string | null;
+  projectDefaultBranch?: string | null;
+}): MergeConfirmedGateBranch {
+  const routed = input.routedFastPathTarget?.trim() || "";
+  const recorded = input.recordedTargetBranch?.trim() || "";
+  const base = input.taskBaseBranch?.trim() || "";
+  const projectDefault = input.projectDefaultBranch?.trim() || "main";
+  if (routed) {
+    return { branch: routed, source: "branch-group-integration", divergedFromProjectDefault: !!recorded && recorded !== projectDefault };
+  }
+  if (recorded) {
+    return { branch: recorded, source: "recorded-merge-target", divergedFromProjectDefault: recorded !== projectDefault };
+  }
+  if (base) {
+    return { branch: base, source: "task-base-branch", divergedFromProjectDefault: false };
+  }
+  return { branch: projectDefault, source: "project-default", divergedFromProjectDefault: false };
+}
+
 const execAsync = promisify(exec);
 
 export type IntegrationBranchSettings =
@@ -129,7 +175,13 @@ function parseBranchRefs(stdout: string, dropRemoteHead = false): string[] {
 
 async function listBranchRefs(rootDir: string, refPrefix: string, dropRemoteHead = false): Promise<string[]> {
   try {
-    const { stdout } = await execAsync(`git for-each-ref --format=%(refname:short) ${refPrefix}`, {
+    // FNXC:IntegrationBranchReadiness 2026-11-05-21:01 (KB-005):
+    // The %(refname:short) format MUST be shell-quoted. Unquoted parentheses are a syntax error in
+    // every POSIX shell (dash is the common /bin/sh), so the unquoted form made listBranchRefs
+    // throw on EVERY host, silently emptying the FN-183 local/remote inference tiers and degrading
+    // every consumer to the "main" fallback — including KB-005's reconcile fallback, which would
+    // then audit the wrong branch on a repo whose default is not main.
+    const { stdout } = await execAsync(`git for-each-ref --format='%(refname:short)' ${refPrefix}`, {
       cwd: rootDir,
       encoding: "utf8",
       timeout: 5_000,
@@ -143,7 +195,9 @@ async function listBranchRefs(rootDir: string, refPrefix: string, dropRemoteHead
 
 function listBranchRefsSync(rootDir: string, refPrefix: string, dropRemoteHead = false): string[] {
   try {
-    const stdout = execSync(`git for-each-ref --format=%(refname:short) ${refPrefix}`, {
+    // FNXC:IntegrationBranchReadiness 2026-11-05-21:01 (KB-005): see the async twin above —
+    // the unquoted %(refname:short) broke under POSIX shells; quoted here for the same reason.
+    const stdout = execSync(`git for-each-ref --format='%(refname:short)' ${refPrefix}`, {
       cwd: rootDir,
       encoding: "utf8",
       timeout: 5_000,

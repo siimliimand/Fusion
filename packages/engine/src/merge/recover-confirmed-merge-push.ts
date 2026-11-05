@@ -2,12 +2,14 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { allowsAutoMergeProcessing, getPostMergeFinalizeBlocker, type Settings, type Task, type TaskStore } from "@fusion/core";
 import { activeSessionRegistry, executingTaskLock } from "../agents/active-session-registry.js";
+import { resolveIntegrationBranch, resolveMergeConfirmedGateBranch } from "./integration-branch.js";
 import { isTaskExecutionLive } from "./merge-execution-exclusion.js";
 import { isPushAfterMergeEnabled } from "./push-after-merge-policy.js";
 import { createMergeWriteFence, type MergeWriteFence } from "./merge-write-fence.js";
 import {
   mergeConfirmationReconcileEligible,
   reconcileConfirmedMergeLanding,
+  type MergeConfirmationReconcileLiveness,
 } from "./recover-confirmed-merge-reconcile.js";
 
 const execFileAsync = promisify(execFile);
@@ -39,6 +41,7 @@ export async function recoverConfirmedMergePush(
   settings: Settings,
   run: Run = runGit,
   suppliedFence?: MergeWriteFence,
+  liveness?: MergeConfirmationReconcileLiveness,
 ): Promise<void> {
   if (!store.rootDir) return;
   /*
@@ -47,13 +50,34 @@ export async function recoverConfirmedMergePush(
   reconciliation, which intentionally ignores autoMerge/pushAfterMerge settings — un-confirming a
   phantom restores the pre-landing state on `autoMerge:false` cards, and any re-merge then follows
   the card's normal human gates.
+
+  FNXC:MergeConfirmationReconcile 2026-11-05-21:01 (KB-005):
+  The trailing `liveness` bag (optional; existing call sites unchanged) is forwarded to the
+  reconciliation predicate so sweep callers enforce the full liveness triple — a session/lock-live
+  card is a silent no-op here, not an un-confirm racing a live executor.
   */
-  if (!eligible(task, settings) && !mergeConfirmationReconcileEligible(task, settings)) return;
+  if (!eligible(task, settings) && !mergeConfirmationReconcileEligible(task, settings, liveness)) return;
   const canPushRecover = eligible(task, settings);
   const details = task.mergeDetails!;
-  const branch = details.mergeTargetBranch;
   const sha = details.commitSha;
-  if (!branch || !sha || !/^[a-f0-9]{40,64}$/i.test(sha)) return;
+  if (!sha || !/^[a-f0-9]{40,64}$/i.test(sha)) return;
+  /*
+  FNXC:MergeConfirmationReconcile 2026-11-05-21:01 (KB-005):
+  Target-aware branch resolution. The recorded `mergeDetails.mergeTargetBranch` stays authoritative
+  and costs ZERO extra git calls (the hot path is unchanged). Legacy rows without a recorded target
+  fall back through `resolveMergeConfirmedGateBranch` — task `baseBranch`, then the project default
+  from `resolveIntegrationBranch` — so a phantom confirmation can still be reconciled when the row
+  never recorded where it landed (the SUBC-011 shape minus the target bookkeeping).
+  `resolveIntegrationBranch` shells out to git, so it is invoked ONLY when the recorded target is
+  absent; the resolved branch still passes the `check-ref-format` validation below like any
+  recorded target would.
+  */
+  const recordedTarget = details.mergeTargetBranch?.trim() || "";
+  const branch = recordedTarget || resolveMergeConfirmedGateBranch({
+    recordedTargetBranch: recordedTarget,
+    taskBaseBranch: task.baseBranch,
+    projectDefaultBranch: await resolveIntegrationBranch(store.rootDir, settings),
+  }).branch;
   const [remote = "origin", ...targetParts] = (settings.pushRemote?.trim() || "origin").split(/\s+/);
   const targetBranch = targetParts.join(" ") || branch;
   // Only configured remote names, never arbitrary URLs, options, or shell expressions.
@@ -104,7 +128,7 @@ export async function recoverConfirmedMergePush(
     try {
       await git(["merge-base", "--is-ancestor", sha, `refs/heads/${branch}`]);
     } catch (ancestorError) {
-      if (!mergeConfirmationReconcileEligible(task, settings)) throw ancestorError;
+      if (!mergeConfirmationReconcileEligible(task, settings, liveness)) throw ancestorError;
       const reconciled = await reconcileConfirmedMergeLanding({
         store, task, settings, branch, recordedSha: sha, run: git, fence,
       });

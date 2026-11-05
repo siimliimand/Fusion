@@ -46,7 +46,7 @@ const allowlist: AllowlistEntry[] = [
   plumbing. Its refPrefix values are module-internal literals, both calls set timeout/maxBuffer,
   and the asynchronous ladder remains the default path, so these sites stay call-site audited.
   */
-  { file: "src/merge/integration-branch.ts", line: 146, primitive: "execSync", signature: "const stdout = execSync(`git for-each-ref --format=%(refname:short) ${refPrefix}`, {", reason: SHORT_GIT_PLUMBING },
+  { file: "src/merge/integration-branch.ts", line: 146, primitive: "execSync", signature: "const stdout = execSync(`git for-each-ref --format='%(refname:short)' ${refPrefix}`, {", reason: SHORT_GIT_PLUMBING },
   { file: "src/merge/integration-branch.ts", line: 203, primitive: "execSync", signature: "const stdout = execSync(\"git symbolic-ref --quiet --short HEAD\", {", reason: SHORT_GIT_PLUMBING },
   { file: "src/merge/merger-git-parse.ts", line: 102, primitive: "execFileSync", signature: "const output = execFileSync(", reason: BOUNDED_GIT_DIFF },
   { file: "src/merge/merger-workspace-test-commands.ts", line: 204, primitive: "execSync", signature: "changedFilesOutput = execSync(", reason: BOUNDED_GIT_DIFF },
@@ -64,7 +64,12 @@ const allowlist: AllowlistEntry[] = [
   { file: "src/merger.ts", line: 9060, primitive: "execSync", signature: "execSync(\"git reset --merge\", { cwd: rootDir, stdio: \"pipe\" });", reason: SHORT_GIT_PLUMBING },
   { file: "src/merger.ts", line: 9069, primitive: "execSync", signature: "execSync(\"git reset --merge\", { cwd: rootDir, stdio: \"pipe\" });", reason: SHORT_GIT_PLUMBING },
   { file: "src/merger.ts", line: 9159, primitive: "execSync", signature: "execSync(\"git reset --merge\", { cwd: rootDir, stdio: \"pipe\" });", reason: SHORT_GIT_PLUMBING },
-  { file: "src/merger.ts", line: 9734, primitive: "execSync", signature: "const postPushSha = execSync(\"git rev-parse HEAD\", {", reason: SHORT_GIT_PLUMBING },
+  /* FNXC:EngineProcessRules 2026-11-05-21:01 (KB-005 evidence re-pin): FIX-6 (77d20778b) rewrote
+     the post-push tip read into a ruleset-aware ternary whose first line reads
+     `?? (execSync("git rev-parse HEAD", {` and did not re-pin this allowlist, leaving the static
+     guard red on the baseline (unmatched new site + stale old entry). Same short-git-plumbing
+     class as the surrounding entries; replaces the pre-FIX-6 signature below it. */
+  { file: "src/merger.ts", line: 10071, primitive: "execSync", signature: "?? (execSync(\"git rev-parse HEAD\", {", reason: SHORT_GIT_PLUMBING },
   { file: "src/merger.ts", line: 10293, primitive: "execSync", signature: "const squashIsEmpty = execSync(", reason: SHORT_GIT_PLUMBING },
   { file: "src/merger.ts", line: 10327, primitive: "execSync", signature: "const squashIsEmpty = execSync(", reason: SHORT_GIT_PLUMBING },
   { file: "src/merger.ts", line: 10514, primitive: "execSync", signature: "execSync(\"git reset --merge\", { cwd: rootDir, stdio: \"pipe\" });", reason: SHORT_GIT_PLUMBING },

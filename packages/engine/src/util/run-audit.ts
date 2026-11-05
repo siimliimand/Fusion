@@ -566,6 +566,14 @@ export type DatabaseMutationType =
   | "task:unpause"
   | "task:resume-step"
   | "task:dependency:add"
+  /*
+  FNXC:RunAudit 2026-11-05-21:01 (KB-005, FIX-2):
+  `merge:confirmed-merge-reconciled` was emitted by the FIX-2 reconciliation through the bounded
+  seam (string-typed mutationType) before this union member existed; declaring it here makes the
+  documented, catalogued event a verified `DatabaseMutationType` literal per the run-audit
+  maintenance contract (docs/run-audit.md + run-audit-catalogue.ts parity).
+  */
+  | "merge:confirmed-merge-reconciled"
   | "merge:request-enqueued"
   | "merge:dependency-parity-diff"
   | "merge:lease-parity-diff"

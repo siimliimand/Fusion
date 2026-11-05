@@ -47,6 +47,13 @@ export const DELIVERY_PIPELINE_RUN_AUDIT_EVENTS_LITERALS = [
   "task:merge-boundary-evidence-recovered",
   "task:merge-admission-deferred-live-execution",
   "task:reconcile-confirmed-merge-checklist",
+  /*
+  FNXC:RunAudit 2026-11-05-21:01 (KB-005, FIX-2):
+  The merge-confirmation reconciliation event documents itself here beside the checklist event it
+  complements: both repair confirmed-merge proof before terminal finalization. docs/run-audit.md
+  carries the full per-event reference; the lock-step parity test keeps the two truthful together.
+  */
+  "merge:confirmed-merge-reconciled",
   "task:finalize-lost-work-blocked",
   "task:auto-recover-stale-merger-status",
 
@@ -130,6 +137,8 @@ export const DELIVERY_PIPELINE_RUN_AUDIT_EVENT_NOTES: Readonly<Record<DeliveryPi
     "Merge admission deferred because a live execution signal still owns the task.",
   "task:reconcile-confirmed-merge-checklist":
     "Confirmed-merge finalization reconciled stale checklist state using counts-only telemetry.",
+  "merge:confirmed-merge-reconciled":
+    "A merge confirmation whose recorded SHA is not on its landing branch is reconciled (content-match rewrite, in-column re-open, or bounded exhausted park) with ids/SHAs/branch/fixed-outcome metadata only.",
   "task:finalize-lost-work-blocked":
     "Finalize is blocked because it would discard work (lost-work guard).",
   "task:auto-recover-stale-merger-status":

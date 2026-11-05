@@ -1,4 +1,5 @@
 import { isPostMergeGateRecoveryDue, resumeMissingPostMergeGate } from "./merge/post-merge-gate-reseed.js";
+import { recoverConfirmedMergePush } from "./merge/recover-confirmed-merge-push.js";
 /**
  * SelfHealingManager — enables unattended multi-day/week operation by
  * providing automatic recovery from common failure modes.
@@ -754,6 +755,14 @@ async function resolveNoOpFinalizeGateIds(store: TaskStore, task: Task): Promise
 }
 export { classifyTransientMergeError } from "./errors/transient-merge-error-classifier.js";
 const MAX_STARVATION_DROPS = 3;
+/*
+FNXC:PhantomConfirmationSweep 2026-11-05-21:01 (KB-005, FIX-2):
+Per-tick candidate cap for the phantom merge-confirmation sweep. This bounds only the SWEEP's
+fan-out per tick; per-task retry bounding is owned by MAX_MERGE_CONFIRMATION_RECONCILE_ATTEMPTS
+(the honest-blocked park) and per-(repo,target) delivery cooldown by push recovery's branchAttempts
+map, so the sweep introduces NO new retry state — leftovers simply wait for the next tick.
+*/
+const MAX_PHANTOM_RECONCILE_CANDIDATES_PER_SWEEP = 5;
 /*
 FNXC:OrphanedWorkItems 2026-11-04-09:33 (FIX-3, SUBC-008):
 A workflow work item whose owning run died has no lifecycle writer left to terminalize it, yet every
@@ -2028,6 +2037,14 @@ export class SelfHealingManager extends SelfHealingGitEvidence {
       manual SQL repair unnecessary.
       */
       { name: "reconcile-orphaned-active-work-items", fn: () => this.reconcileOrphanedWorkItems().then(() => undefined) },
+      /*
+      FNXC:PhantomConfirmationSweep 2026-11-05-21:01 (KB-005, FIX-2):
+      Ordering is load-bearing: a dead run's active work item must be terminalized by the janitor
+      sweep above BEFORE this reconcile runs, because the reconcile's graph-idle guard refuses any
+      card that still holds an active work item. Runs before the merge-recovery steps below so a
+      re-opened card is re-driven by the merger in the same pass when possible.
+      */
+      { name: "reconcile-phantom-merge-confirmations", fn: () => this.reconcilePhantomMergeConfirmations().then(() => undefined) },
       { name: "reconcile-unproven-review-approvals", fn: () => this.reconcileUnprovenReviewApprovals().then(() => undefined) },
       { name: "reconcile-merge-boundary-evidence-gaps", fn: () => this.reconcileMergeBoundaryEvidenceGaps().then(() => undefined) },
       /*
@@ -3144,6 +3161,13 @@ export class SelfHealingManager extends SelfHealingGitEvidence {
           // mid-cycle without an engine restart (SUBC-008's cleanup orphaned its merge item 700 ms
           // before it went runnable). Same budget and liveness rules as the startup step.
           { name: "reconcile-orphaned-active-work-items", fn: () => this.reconcileOrphanedWorkItems() },
+          /*
+          FNXC:PhantomConfirmationSweep 2026-11-05-21:01 (KB-005, FIX-2): steady-state half — a
+          poisoned confirmation can appear mid-cycle without a restart. Same placement rules as the
+          startup step: after the orphaned-work-item janitor (graph-idle guard), before the
+          merge-recovery steps.
+          */
+          { name: "reconcile-phantom-merge-confirmations", fn: () => this.reconcilePhantomMergeConfirmations() },
           { name: "reconcile-unproven-review-approvals", fn: () => this.reconcileUnprovenReviewApprovals() },
           { name: "reconcile-merge-boundary-evidence-gaps", fn: () => this.reconcileMergeBoundaryEvidenceGaps() },
           { name: "recover-failed-pre-merge-steps", fn: () => this.recoverReviewTasksWithFailedPreMergeSteps() },
@@ -8915,6 +8939,50 @@ export class SelfHealingManager extends SelfHealingGitEvidence {
    *
    * @returns Count of items actually transitioned to `failed`.
    */
+  /*
+  FNXC:PhantomConfirmationSweep 2026-11-05-21:01 (KB-005, FIX-2):
+  Self-healing trigger for the merge-confirmation reconciliation (SUBC-011): a card whose
+  `mergeDetails.mergeConfirmed=true` points at a commit that never landed on its target branch
+  wedged finalization forever until an operator rewrote the row by hand. The sweep enumerates
+  mergeConfirmed rows and delegates EACH candidate to `recoverConfirmedMergePush`, which self-gates
+  via `eligible() || mergeConfirmationReconcileEligible()` — healthy ancestors and live sessions
+  are silent no-ops — and reconciles only the poisoned shape (un-confirm + in-column merge re-open
+  through the sanctioned continuation writer, bounded attempts, honest park).
+
+  Fences layered here: paused engines skip the whole sweep (belt-and-braces on top of the
+  predicate's own pause fence; batch 2 and startup recovery are already pause-gated upstream), a
+  store without `rootDir` cannot run the git proofs, and the injected `isTaskActive` probe completes
+  the canonical liveness triple inside the callee. At most
+  MAX_PHANTOM_RECONCILE_CANDIDATES_PER_SWEEP candidates are processed per tick; the slim projection
+  pre-filter keeps the full row read (branchContext is needed by the eligibility predicate) to
+  confirmed rows only.
+  */
+  private async reconcilePhantomMergeConfirmations(): Promise<number> {
+    const settings = await this.store.getSettings();
+    if (settings.globalPause || settings.enginePaused) return 0;
+    if (!this.store.rootDir) return 0;
+    const slimTasks = await this.store.listTasks({ slim: true, includeArchived: false });
+    const candidates = slimTasks
+      .filter((t) => t.mergeDetails?.mergeConfirmed === true)
+      .slice(0, MAX_PHANTOM_RECONCILE_CANDIDATES_PER_SWEEP);
+    let processed = 0;
+    for (const slim of candidates) {
+      try {
+        // Slim rows may omit branchContext, which the eligibility predicate reads — full read per
+        // candidate before handing off; the callee's own gates decide per card.
+        const full = await this.store.getTask(slim.id).catch(() => null);
+        if (!full) continue;
+        await recoverConfirmedMergePush(this.store, full, settings, undefined, undefined, {
+          isTaskActive: this.options.isTaskActive,
+        });
+        processed += 1;
+      } catch (err) {
+        log.warn(`reconcilePhantomMergeConfirmations: candidate ${slim.id} failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    return processed;
+  }
+
   async reconcileOrphanedWorkItems(): Promise<number> {
     try {
       if (typeof this.store.listDueWorkflowWorkItems !== "function") return 0;

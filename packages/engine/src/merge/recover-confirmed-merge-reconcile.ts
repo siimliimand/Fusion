@@ -41,6 +41,12 @@ recovery itself, reconciliation is ALLOWED for `autoMerge:false` cards and ignor
 `pushAfterMerge`: un-confirming restores the pre-landing state, and the re-merge then follows the
 card's normal human gates. All audit emission is bounded best-effort (FN-9175) and never includes
 prose — ids, SHAs, counts, and fixed outcomes only.
+
+FNXC:MergeConfirmationReconcile 2026-11-05-21:01 (KB-005):
+The predicate takes an OPTIONAL `liveness` bag merged into the `isTaskExecutionLive` deps so sweep
+callers can inject their own task-active probe (the canonical liveness triple: registered session
+path, executing lock, isTaskActive) without the predicate reaching into caller state. Callers that
+already gate through finalization/merge-pending flows keep passing nothing.
 */
 
 /** Bounded re-open attempts before the honest-blocked park. */
@@ -64,14 +70,27 @@ export function mergeConfirmationReconcileExhaustedError(sha: string, branch: st
  * execution, fresh checkout leases, pauses, deletion, engine/global pauses, workspace tasks, and
  * shared-branch group members.
  */
-export function mergeConfirmationReconcileEligible(task: Task, settings: Settings): boolean {
+export interface MergeConfirmationReconcileLiveness {
+  /** Extra task-active probe merged into the liveness triple (sweep wiring, KB-005). */
+  isTaskActive?: (taskId: string) => boolean;
+}
+
+export function mergeConfirmationReconcileEligible(
+  task: Task,
+  settings: Settings,
+  liveness?: MergeConfirmationReconcileLiveness,
+): boolean {
   return task.mergeDetails?.mergeConfirmed === true && !task.workspaceWorktrees
     && task.branchContext?.assignmentMode !== "shared"
     && !task.paused && !task.userPaused && !task.deletedAt
     && !settings.globalPause && !settings.enginePaused
     && !isMergeActiveStatus(task.status)
     && !hasFreshCheckoutLease(task, settings)
-    && !isTaskExecutionLive(task.id, { activeSessionRegistry, executingTaskLock });
+    && !isTaskExecutionLive(task.id, {
+      activeSessionRegistry,
+      executingTaskLock,
+      ...(liveness?.isTaskActive ? { isTaskActive: liveness.isTaskActive } : {}),
+    });
 }
 
 export type ConfirmedMergeReconcileOutcome =
@@ -93,7 +112,7 @@ function pickMergeRegionEntryNode(ir: WorkflowIr, column: string): WorkflowIrNod
 
 async function emitReconcileAudit(
   store: TaskStore,
-  input: { taskId: string; recordedSha: string; outcome: string; attempt: number },
+  input: { taskId: string; recordedSha: string; branch: string; outcome: string; attempt: number },
 ): Promise<void> {
   await emitBoundedRunAudit(store, {
     agentId: "system",
@@ -102,9 +121,12 @@ async function emitReconcileAudit(
     domain: "git",
     mutationType: "merge:confirmed-merge-reconciled",
     target: input.recordedSha,
+    // FNXC:MergeConfirmationReconcile 2026-11-05-21:01 (KB-005): ids/SHAs/outcomes only — branch
+    // names are permitted git-domain metadata (cf. push:recovery-branch), never prose.
     metadata: {
       taskId: input.taskId,
       recordedSha: input.recordedSha,
+      branch: input.branch,
       outcome: input.outcome,
       attempt: input.attempt,
     },
@@ -133,7 +155,7 @@ export async function reconcileConfirmedMergeLanding(
   const { store, task, settings, branch, recordedSha, run, fence } = input;
   const previousAttempts = task.mergeDetails?.mergeConfirmationReconcileCount ?? 0;
   const audit = (outcome: string, attempt: number) =>
-    emitReconcileAudit(store, { taskId: task.id, recordedSha, outcome, attempt });
+    emitReconcileAudit(store, { taskId: task.id, recordedSha, branch, outcome, attempt });
 
   if (previousAttempts >= MAX_MERGE_CONFIRMATION_RECONCILE_ATTEMPTS) {
     const attempts = previousAttempts;
@@ -234,7 +256,26 @@ export async function reconcileConfirmedMergeLanding(
       || live.paused || live.userPaused || live.deletedAt
       || !mergeConfirmationReconcileEligible(live, settings)) return null;
     cleared.value = true;
-    const { commitSha: _dropSha, pushRecovery: _dropRecovery, ...restDetails } = live.mergeDetails;
+    /*
+    FNXC:MergeConfirmationReconcile 2026-11-05-21:01 (KB-005):
+    The un-confirm must be TRUTHFUL: it drops the same false-landing fields the FN-5627 fast-path
+    clears (project-engine.ts) — mergedAt and the stat/no-op attribution fields are lies once the
+    recorded landing is proven false, and leaving them turned the reconciliation into a quieter
+    version of the poisoned row it repairs. mergeTargetBranch stays (it describes where the NEXT
+    landing should be proven) alongside the reconciliation record.
+    */
+    const {
+      commitSha: _dropSha,
+      pushRecovery: _dropRecovery,
+      mergedAt: _dropMergedAt,
+      landedFiles: _dropLandedFiles,
+      filesChanged: _dropFilesChanged,
+      insertions: _dropInsertions,
+      deletions: _dropDeletions,
+      noOpVerifiedShortCircuit: _dropNoOpShortCircuit,
+      landedFilesAttributionRestricted: _dropAttributionRestricted,
+      ...restDetails
+    } = live.mergeDetails;
     return {
       mergeDetails: {
         ...restDetails,
