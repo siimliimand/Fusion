@@ -137,6 +137,9 @@ README must surface PostgreSQL-default storage and recently shipped operator sur
 
 FNXC:Docs 2026-11-04-14:39:
 Renewal pass against the 0.78 line. Verified against this repository (not upstream release notes): the built-in workflow catalog now includes non-coding flows (Brainstorming, Design, Marketing, Lead generation) plus Coding (Ideas)/Review-gated variants (packages/core/src/workflows/builtin-workflows.ts); the OAuth/API-key provider catalog includes GitHub Copilot, Meta (Muse), Minimax, OpenRouter, and Antigravity (packages/dashboard/src/routes/auth-provider-catalog.ts); multi-repository Workspaces, MCP, Computer Use, Task Evaluations, and Signals Connectors all ship with canonical docs pages. Task archiving is intentionally KEPT in this fork (unlike upstream's removal), so board copy still says archive actions.
+
+FNXC:Docs 2026-11-05-11:33:
+Renewal pass. Surfaced the engine's self-healing + run-audit resilience story, which shipped long ago but had no front-door mention — it is the substance behind the "run autonomously" claims, and was proven live on 2026-11-05 when a wedged production dashboard (an upstream pi-agent-core repairJson CPU spin blocking the event loop) was diagnosed with a live inspector stack capture and routed into scoped stability tasks instead of a blind restart. Added Architecture / Run Audit / Testing rows to the Documentation table so the internal reference docs are discoverable from the front door.
 -->
 
 |  |  |
@@ -144,6 +147,7 @@ Renewal pass against the 0.78 line. Verified against this repository (not upstre
 | 🧠 **AI planning** | Describe a task in plain language. Planning agents turn it into a `PROMPT.md` plan with steps, file scope, and acceptance criteria. |
 | 🔁 **Selectable workflows** | Built-ins cover coding (auto, ideas, review-gated, stepwise), quick fixes, review-heavy work, plugin-gated Compound Engineering, PR lifecycle fragments, and non-coding flows — Brainstorming, Design, Marketing, Lead generation. Pick a workflow per task or author custom ones in the [Workflow Editor](./docs/workflow-editor.md). |
 | 🛡️ **Planner oversight** | Per-task or per-workflow oversight level (`off` / `observe` / `steer` / `autonomous`) governs how closely a planner overseer watches and intervenes — merge/PR and destructive actions always require explicit human confirmation. See [Settings Reference](./docs/settings-reference.md#workflow-settings) and [Dashboard Guide](./docs/dashboard-guide.md). |
+| 🚑 **Self-healing engine** | Startup + periodic recovery sweeps reconcile stranded tasks, orphaned work items, stale worktrees, and dead-run continuations in place — no babysitting required. Every recovery is recorded through bounded, best-effort run-audit telemetry. ([Architecture](./docs/architecture.md) · [Run Audit](./docs/run-audit.md)) |
 | 🌳 **Worktree isolation** | Each task runs in its own branch and worktree (`fusion/{task-id}`). Parallel tasks. Zero conflicts. Optional [worktrunk](https://github.com/max-sixty/worktrunk) delegation via [`worktrunk.enabled`](./docs/settings-reference.md#worktree-backend-settings) (see [WorktreeBackend abstraction](./docs/architecture.md#worktreebackend-abstraction)). |
 | 🗂️ **Multi-repo workspaces** | One task that spans several repositories: per-repository execution and land, workspace leases, recovery, and revert. ([Workspaces](./docs/workspaces.md)) |
 | 🔌 **MCP servers** | Wire Model Context Protocol servers into your agents — per-server secret references, validation, and import/export. ([MCP](./docs/mcp.md)) |
@@ -517,6 +521,9 @@ npx companies.sh add paperclipai/companies/gstack
 | [Multi-Project](./docs/multi-project.md) | Central registry, isolation modes, and migration paths |
 | [Workspaces (Multi-Repository)](./docs/workspaces.md) | Multi-repo setup, per-repository execution and land, recovery, revert, and archive cleanup |
 | [Storage](./docs/storage.md) | PostgreSQL runtime storage, migration compatibility, and file-backed payloads |
+| [Architecture](./docs/architecture.md) | Lifecycle invariants, self-healing rules, reliability backstops, and run-audit internals |
+| [Run Audit](./docs/run-audit.md) | Bounded best-effort telemetry emitters, hostile-sink isolation, and metadata contract |
+| [Testing](./docs/testing.md) | Test lanes, worker fanout, test taxonomy, quarantine ledger, and verification commands |
 | [Docker](./docs/docker.md) | Container deployment |
 
 ---
