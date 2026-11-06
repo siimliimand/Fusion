@@ -84,6 +84,32 @@ export type PostMergeGateResumeBlockReason =
   | "workflow-selection-changed"
   | "not-due";
 
+export type PostMergeGateRetryOutcome = "deferred" | "refused";
+
+/*
+FNXC:RetryOutcomeClassification 2026-11-05-21:38 (KB-007, SUBC-008):
+An operator Retry must machine-readably distinguish a deferred retry from a refused one instead of
+answering every failure with one undifferentiated 409. deferred means a later retry CAN act once
+automatic progress clears the guard (merge-active, lease-fresh, execution-live, active-work-items);
+refused means NO retry will act until something outside retry changes (finalize-blocker,
+workflow-selection-changed, not-due). The lookup is keyed by the closed union so adding a new
+reason fails compilation until it is classified deliberately — the same closed-union discipline the
+reason union itself documents.
+*/
+const RETRY_OUTCOME_BY_BLOCK_REASON: Record<PostMergeGateResumeBlockReason, PostMergeGateRetryOutcome> = {
+  "merge-active": "deferred",
+  "lease-fresh": "deferred",
+  "execution-live": "deferred",
+  "active-work-items": "deferred",
+  "finalize-blocker": "refused",
+  "workflow-selection-changed": "refused",
+  "not-due": "refused",
+};
+
+export function classifyPostMergeGateRetryOutcome(reason: PostMergeGateResumeBlockReason): PostMergeGateRetryOutcome {
+  return RETRY_OUTCOME_BY_BLOCK_REASON[reason];
+}
+
 export interface PostMergeGateResumeBlockedWorkItem {
   id: string | null;
   kind: string;

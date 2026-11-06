@@ -9,7 +9,7 @@ import {
   type Task,
   type TaskStore,
 } from "@fusion/core";
-import { isMergeActiveStatus, isStaleMergeActiveStatus, resolveColumnResumeNode, resumeMissingPostMergeGate, type PostMergeGateResumeBlockReason } from "@fusion/engine";
+import { classifyPostMergeGateRetryOutcome, isMergeActiveStatus, isStaleMergeActiveStatus, resolveColumnResumeNode, resumeMissingPostMergeGate, type PostMergeGateResumeBlockReason } from "@fusion/engine";
 import { badRequest, conflict, notFound } from "../api-error.js";
 
 /*
@@ -129,11 +129,67 @@ export async function restartTaskStage(deps: RestartTaskStageDeps): Promise<Rest
       const task = await store.getTask(taskId);
       if (!task) throw notFound(`Task ${taskId} not found`);
       const retryLandedVerification = async (landedTask: Task): Promise<Task> => {
-        if (isLiveMergeRestart(landedTask, deps)) throw conflict("Retry is unavailable while a merge is active");
+        if (isLiveMergeRestart(landedTask, deps)) {
+          /*
+          FNXC:RetryOutcomeClassification 2026-11-06-01:32 (KB-007, SUBC-008):
+          This early guard is a landed-verification retry outcome like any other: once the merge
+          finishes, a later retry can act, so it classifies as deferred, is audited in the task
+          log, and carries its reason in the body — the operator sees the same classified contract
+          whether this guard or the seeder's merge-active guard refused. Message text unchanged.
+          */
+          await store.logEntry(taskId, "Retry requested from dashboard (post-merge recheck deferred: merge-active)").catch(() => undefined);
+          throw conflict("Retry is unavailable while a merge is active", { outcome: "deferred", reason: "merge-active" });
+        }
+        /*
+        FNXC:RetryOutcomeClassification 2026-11-05-21:41 (KB-007, SUBC-008):
+        A paused landed card used to fall through to the seeder and come back as "not-due" — a
+        message naming four states (pending, active, held, approved) none of which was the actual
+        pause. The manual door now names the truth before invoking the seeder. `card-paused` and
+        `engine-paused` are ROUTE-LOCAL reason vocabulary living only in this refusal's details —
+        the engine's PostMergeGateResumeBlockReason union stays closed and its own guards remain
+        the automatic-lane backstop; this route check exists only to name the truth on the manual
+        door. Deleted cards still fall through to the seeder (their truth is landing-proof
+        preservation, not a pause).
+        */
+        if (landedTask.paused || landedTask.userPaused) {
+          await store.logEntry(taskId, "Retry requested from dashboard (post-merge recheck refused: card-paused)").catch(() => undefined);
+          throw conflict("Retry is unavailable while the card is paused; resume it, then retry", { outcome: "refused", reason: "card-paused" });
+        }
+        /*
+        FNXC:RetryOutcomeClassification 2026-11-05-21:41 (KB-007, SUBC-008):
+        An engine/global pause likewise reached the operator as "not-due". Reading settings on the
+        manual door lets the refusal name the pause and the exact remedy while the seeder's own
+        guard continues to protect every automatic caller unchanged.
+        */
+        const settings = await store.getSettings();
+        if (settings.globalPause || settings.enginePaused) {
+          await store.logEntry(taskId, "Retry requested from dashboard (post-merge recheck refused: engine-paused)").catch(() => undefined);
+          throw conflict("Retry is unavailable while the engine (or all projects) is paused; resume it, then retry", { outcome: "refused", reason: "engine-paused" });
+        }
         const resumed = await resumeMissingPostMergeGate(store, taskId, { manualRetry: true });
         if (resumed.outcome !== "resumed") {
-          throw conflict(postMergeRecheckRefusalMessage(resumed));
+          /*
+          FNXC:RetryOutcomeClassification 2026-11-05-21:41 (KB-007, SUBC-008):
+          A refusal that leaves no trace and no machine-readable outcome is a success-shaped
+          no-op: the operator cannot tell a wait-it-out deferral from a change-something refusal,
+          and the card's log never records the attempt. Every landed-verification retry outcome is
+          now classified (classifyPostMergeGateRetryOutcome), written to the task log best-effort,
+          and carried in the ApiError details; the message text stays byte-identical.
+          */
+          const outcome = classifyPostMergeGateRetryOutcome(resumed.reason);
+          await store.logEntry(taskId, `Retry requested from dashboard (post-merge recheck ${outcome}: ${resumed.reason})`).catch(() => undefined);
+          throw conflict(postMergeRecheckRefusalMessage(resumed), {
+            outcome,
+            reason: resumed.reason,
+            ...(resumed.workItem ? { workItem: resumed.workItem } : {}),
+          });
         }
+        /*
+        FNXC:RetryOutcomeClassification 2026-11-05-21:41 (KB-007, SUBC-008):
+        The seeder's own `[post-merge] Rechecking…` entry stays unchanged; this entry attributes
+        the reseed to the operator's Retry so the card's log shows who triggered the recheck.
+        */
+        await store.logEntry(taskId, `Retry requested from dashboard (post-merge gate '${resumed.gateId}' reseeded for verification recheck)`).catch(() => undefined);
         return store.getTask(taskId);
       };
       if (task.mergeDetails?.mergeConfirmed) return retryLandedVerification(task);

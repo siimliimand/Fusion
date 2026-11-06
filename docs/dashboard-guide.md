@@ -99,6 +99,10 @@ Every live card, including an intake or planning card, offers **Retry**, **Reset
 
 Retry refuses workflow terminal columns, active merges across the whole merge pipeline (including its review phase), and columns without a workflow entry node of their own. An orphaned stale merge stamp remains retryable after Fusion confirms that no live merger owns it. A retry interrupted during publication leaves the card paused with `restart-stage-publishing`; this durable safety fence is retained for compatibility, and selecting **Retry** again safely resumes publication.
 
+<!-- FNXC:RetryOutcomeClassification 2026-11-06-01:18 (KB-007, SUBC-008): the operator Retry contract for a merge-confirmed card whose post-merge verification gate is failed or awaiting recheck. Every attempt is classified reseeded/deferred/refused in the response and audited in the task log; pause refusals name the actual state. -->
+
+On a merge-confirmed card whose post-merge verification gate failed or is waiting for its next automatic recheck, **Retry** classifies each attempt and reports the outcome: **reseeded** re-runs the verification gate immediately instead of waiting out the machine backoff clock, **deferred** means something else must finish first (a live merge, a fresh checkout lease, still-running execution, or active work items — retrying later can act), and **refused** means no retry will act until something outside retry changes (a finalize blocker, a changed workflow selection, or a gate that is already approved or still pending). Each attempt — including refusals — is recorded in the task's activity log with its outcome and reason, and a refusal response carries the outcome, reason, and the blocking work item when one applies. Retrying a paused card, or while the engine (or all projects) is paused, refuses with that actual state and the resume-then-retry remedy rather than a generic gate message.
+
 ## Keyboard shortcuts
 
 <!--

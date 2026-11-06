@@ -1281,7 +1281,7 @@ export {
   type CliAdapterDescriptor,
 } from "./cli-agent/adapters/index.js";
 export { installBaselineArchiveWorktreeDisposer } from "./healing/archive-worktree-disposer-install.js";
-export { resumeMissingPostMergeGate, type PostMergeGateResumeBlockReason, type PostMergeGateResumeResult } from "./merge/post-merge-gate-reseed.js";
+export { resumeMissingPostMergeGate, classifyPostMergeGateRetryOutcome, type PostMergeGateResumeBlockReason, type PostMergeGateResumeResult } from "./merge/post-merge-gate-reseed.js";
 export { MemoryConsolidationService, resolveMemoryConsolidationPorts } from "./memory/index.js";
 
 // CLI Agent Executor — task ↔ session orchestration (U7).

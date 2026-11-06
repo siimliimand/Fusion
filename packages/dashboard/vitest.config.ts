@@ -668,6 +668,23 @@ export default defineConfig({
         __dirname,
         "../../plugins/fusion-plugin-omp-runtime/src/index.ts",
       ),
+      /*
+      FNXC:RetryOutcomeClassification 2026-11-05-22:05 (KB-007, SUBC-008):
+      runtime-provider-probes.ts imports probeAntigravityBinary from
+      @fusion-plugin-examples/antigravity-runtime (FN-9341). Alias to the thin probes-entry,
+      not the full index, so a source checkout without a plugin build can resolve it — same
+      class as the Claude/omp aliases above. Without it, every dashboard test that
+      transitively imports the runtime provider fails with "Failed to resolve entry for
+      package".
+      */
+      "@fusion-plugin-examples/antigravity-runtime/probe": resolve(
+        __dirname,
+        "../../plugins/fusion-plugin-antigravity-runtime/src/probe.ts",
+      ),
+      "@fusion-plugin-examples/antigravity-runtime": resolve(
+        __dirname,
+        "../../plugins/fusion-plugin-antigravity-runtime/src/probes-entry.ts",
+      ),
       "@fusion-plugin-examples/todos/dashboard-view": resolve(
         __dirname,
         "../../plugins/fusion-plugin-todos/src/dashboard-view.tsx",

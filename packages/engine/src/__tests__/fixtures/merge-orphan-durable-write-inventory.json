@@ -7103,7 +7103,7 @@
       "enclosingSymbolPath": "resumeMissingPostMergeGate",
       "writer": "store.logEntry",
       "ordinal": 1,
-      "lineHint": 230,
+      "lineHint": 256,
       "owningEntryPoint": "runAiMerge>finalizeTask>finalizeProvenAutoMergeTask",
       "reachableDataStates": [
         "Confirmed merge awaiting required post-merge evidence; legacy recovery-owned failure cleanup and missing/rejected gate continuation reseeding."
@@ -7123,7 +7123,7 @@
       "enclosingSymbolPath": "resumeMissingPostMergeGate>seeded",
       "writer": "store.seedWorkspaceCodeReviewContinuationIfIdle",
       "ordinal": 1,
-      "lineHint": 204,
+      "lineHint": 230,
       "owningEntryPoint": "runAiMerge>finalizeTask>finalizeProvenAutoMergeTask",
       "reachableDataStates": [
         "Confirmed merge awaiting required post-merge evidence; legacy recovery-owned failure cleanup and missing/rejected gate continuation reseeding."
@@ -7143,7 +7143,7 @@
       "enclosingSymbolPath": "resumeMissingPostMergeGate>updated",
       "writer": "store.updateTaskAtomic",
       "ordinal": 1,
-      "lineHint": 162,
+      "lineHint": 188,
       "owningEntryPoint": "runAiMerge>finalizeTask>finalizeProvenAutoMergeTask",
       "reachableDataStates": [
         "Confirmed merge awaiting required post-merge evidence; legacy recovery-owned failure cleanup and missing/rejected gate continuation reseeding."
@@ -7381,7 +7381,7 @@
       "enclosingSymbolPath": "recoverConfirmedMergePush",
       "writer": "store.logEntry",
       "ordinal": 1,
-      "lineHint": 163,
+      "lineHint": 187,
       "owningEntryPoint": "indeterminate",
       "reachableDataStates": [
         "Confirmed single-repository landing awaiting remote delivery; independent of evidence approval."
@@ -7401,7 +7401,7 @@
       "enclosingSymbolPath": "recoverConfirmedMergePush",
       "writer": "store.logEntry",
       "ordinal": 2,
-      "lineHint": 170,
+      "lineHint": 194,
       "owningEntryPoint": "indeterminate",
       "reachableDataStates": [
         "Confirmed single-repository landing awaiting remote delivery; independent of evidence approval."
@@ -7421,7 +7421,7 @@
       "enclosingSymbolPath": "recoverConfirmedMergePush",
       "writer": "store.updateTaskAtomic",
       "ordinal": 1,
-      "lineHint": 132,
+      "lineHint": 156,
       "owningEntryPoint": "indeterminate",
       "reachableDataStates": [
         "Confirmed single-repository landing awaiting remote delivery; independent of evidence approval."
@@ -7441,7 +7441,7 @@
       "enclosingSymbolPath": "recoverConfirmedMergePush",
       "writer": "store.updateTaskAtomic",
       "ordinal": 2,
-      "lineHint": 160,
+      "lineHint": 184,
       "owningEntryPoint": "indeterminate",
       "reachableDataStates": [
         "Confirmed single-repository landing awaiting remote delivery; independent of evidence approval."
@@ -7461,7 +7461,7 @@
       "enclosingSymbolPath": "recoverConfirmedMergePush",
       "writer": "store.updateTaskAtomic",
       "ordinal": 3,
-      "lineHint": 167,
+      "lineHint": 191,
       "owningEntryPoint": "indeterminate",
       "reachableDataStates": [
         "Confirmed single-repository landing awaiting remote delivery; independent of evidence approval."
@@ -7481,7 +7481,7 @@
       "enclosingSymbolPath": "reconcileConfirmedMergeLanding",
       "writer": "store.logEntry",
       "ordinal": 1,
-      "lineHint": 153,
+      "lineHint": 175,
       "owningEntryPoint": "indeterminate",
       "reachableDataStates": [
         "merge-confirmed landing whose recorded SHA is not an ancestor of the local target branch (false-confirmation limbo)"
@@ -7501,7 +7501,7 @@
       "enclosingSymbolPath": "reconcileConfirmedMergeLanding",
       "writer": "store.logEntry",
       "ordinal": 2,
-      "lineHint": 199,
+      "lineHint": 221,
       "owningEntryPoint": "indeterminate",
       "reachableDataStates": [
         "merge-confirmed landing whose recorded SHA is not an ancestor of the local target branch (false-confirmation limbo)"
@@ -7521,7 +7521,7 @@
       "enclosingSymbolPath": "reconcileConfirmedMergeLanding",
       "writer": "store.logEntry",
       "ordinal": 3,
-      "lineHint": 293,
+      "lineHint": 334,
       "owningEntryPoint": "indeterminate",
       "reachableDataStates": [
         "merge-confirmed landing whose recorded SHA is not an ancestor of the local target branch (false-confirmation limbo)"
@@ -7541,7 +7541,7 @@
       "enclosingSymbolPath": "reconcileConfirmedMergeLanding",
       "writer": "store.logEntry",
       "ordinal": 4,
-      "lineHint": 302,
+      "lineHint": 343,
       "owningEntryPoint": "indeterminate",
       "reachableDataStates": [
         "merge-confirmed landing whose recorded SHA is not an ancestor of the local target branch (false-confirmation limbo)"
@@ -7561,7 +7561,7 @@
       "enclosingSymbolPath": "reconcileConfirmedMergeLanding",
       "writer": "store.replaceActiveTaskWorkflowContinuation",
       "ordinal": 1,
-      "lineHint": 258,
+      "lineHint": 299,
       "owningEntryPoint": "indeterminate",
       "reachableDataStates": [
         "merge-confirmed landing whose recorded SHA is not an ancestor of the local target branch (false-confirmation limbo)"
@@ -7581,7 +7581,7 @@
       "enclosingSymbolPath": "reconcileConfirmedMergeLanding",
       "writer": "store.updateTaskAtomic",
       "ordinal": 1,
-      "lineHint": 141,
+      "lineHint": 163,
       "owningEntryPoint": "indeterminate",
       "reachableDataStates": [
         "merge-confirmed landing whose recorded SHA is not an ancestor of the local target branch (false-confirmation limbo)"
@@ -7601,7 +7601,7 @@
       "enclosingSymbolPath": "reconcileConfirmedMergeLanding",
       "writer": "store.updateTaskAtomic",
       "ordinal": 2,
-      "lineHint": 186,
+      "lineHint": 208,
       "owningEntryPoint": "indeterminate",
       "reachableDataStates": [
         "merge-confirmed landing whose recorded SHA is not an ancestor of the local target branch (false-confirmation limbo)"
@@ -7621,7 +7621,7 @@
       "enclosingSymbolPath": "reconcileConfirmedMergeLanding",
       "writer": "store.updateTaskAtomic",
       "ordinal": 3,
-      "lineHint": 231,
+      "lineHint": 253,
       "owningEntryPoint": "indeterminate",
       "reachableDataStates": [
         "merge-confirmed landing whose recorded SHA is not an ancestor of the local target branch (false-confirmation limbo)"
@@ -7641,7 +7641,7 @@
       "enclosingSymbolPath": "reconcileConfirmedMergeLanding",
       "writer": "store.updateTaskAtomic",
       "ordinal": 4,
-      "lineHint": 279,
+      "lineHint": 320,
       "owningEntryPoint": "indeterminate",
       "reachableDataStates": [
         "merge-confirmed landing whose recorded SHA is not an ancestor of the local target branch (false-confirmation limbo)"
@@ -11105,7 +11105,7 @@
       "enclosingSymbolPath": "recoverApprovedStrandedAiMergeCommit>finalized",
       "writer": "finalizeProvenAutoMergeTask",
       "ordinal": 1,
-      "lineHint": 14218,
+      "lineHint": 14286,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -11125,7 +11125,7 @@
       "enclosingSymbolPath": "recoverMergedReviewTasks>finalization",
       "writer": "finalizeProvenAutoMergeTask",
       "ordinal": 1,
-      "lineHint": 13080,
+      "lineHint": 13148,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
