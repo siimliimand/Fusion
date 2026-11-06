@@ -29,6 +29,19 @@ export interface RestartTaskStageEngine {
   clearTaskPauseAbortState?: (taskId: string) => void | Promise<void>;
 }
 
+/*
+FNXC:ExternalBlockResumeUserPause 2026-11-05-23:04 (KB-008, SUBC-008 R1):
+Operator intent outranks the frozen recovery path. An operator-authored pause (`userPaused === true`,
+raised by POST /tasks/:id/pause) can sit on a card that also carries external-block freeze metadata;
+without this guard, external-block Retry resumed or stage-restarted that card and silently
+steamrolled the operator's deliberate pause. Retry must refuse while the pause stands: the refusal
+mutates nothing — no continuation publication, no freeze-metadata clear, no task log, no audit row —
+and the operator's remedy is Unpause, then Retry. The discriminator is strictly
+`userPaused === true`; the freeze's own `paused: true, pausedReason: "external-block"` is recovery
+lifecycle state, NOT a user pause, and must never trigger this refusal. The check lives only in this
+resume module — the locked preflight below plus the retarget wrapper's live re-read — so
+`restartTaskStage` keeps its existing contract for every other Retry surface.
+*/
 function isPendingExternalBlockResume(item: WorkflowWorkItem): boolean {
   return item.kind === "task"
     && (item.state === "runnable" || item.state === "running" || item.state === "held")
@@ -88,6 +101,11 @@ export async function resumeExternallyBlockedTask(params: {
 
     const externalBlock = task.externalBlock;
     if (!externalBlock) throw conflict("External-block Retry requires durable obstacle metadata");
+    // FNXC:ExternalBlockResumeUserPause 2026-11-05-23:04: refuse before any resolution or
+    // publication so a user-paused frozen card is untouched by external-block Retry.
+    if (task.userPaused === true) {
+      throw conflict("External-block Retry is unavailable: the card is user-paused; unpause it before retrying");
+    }
     const ir = await resolveWorkflowIrForTask(store, task.id);
     const resumeNode = externalBlock.resume.nodeId
       ? ir.nodes.find((node) => node.id === externalBlock.resume.nodeId)
@@ -180,6 +198,12 @@ export async function republishExternalBlockResumeAsStageRestart(params: {
   if (!live) throw notFound(`Task ${taskId} not found`);
   if (!isTaskExternallyBlocked(live)) {
     throw conflict("External-block Retry has already resumed this task");
+  }
+  // FNXC:ExternalBlockResumeUserPause 2026-11-05-23:04: this wrapper runs OUTSIDE the planning
+  // lifecycle lock, so its live re-read must re-apply the user-paused refusal: a pause raised
+  // between the locked preflight and this republication must not be overridden by the restart.
+  if (live.userPaused === true) {
+    throw conflict("External-block Retry is unavailable: the card is user-paused; unpause it before retrying");
   }
 
   const restarted = await restartTaskStage({

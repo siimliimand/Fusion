@@ -69,7 +69,7 @@ function blockedTask(overrides: Partial<Task> = {}): Task {
   } as Task;
 }
 
-function createStore(row: Task) {
+function createStore(row: Task, ir: unknown = IR) {
   const items: Array<Record<string, unknown>> = [];
   const store = {
     getRootDir: vi.fn(() => "/project"),
@@ -78,7 +78,7 @@ function createStore(row: Task) {
     listTasks: vi.fn(async () => [structuredClone(row)]),
     withPlanningLifecycleLock: vi.fn(async (_taskId: string, work: () => Promise<unknown>) => await work()),
     getTaskWorkflowSelectionAsync: vi.fn().mockResolvedValue({ workflowId: "wf-external-block" }),
-    getWorkflowDefinition: vi.fn().mockResolvedValue({ id: "wf-external-block", name: "External block", ir: IR }),
+    getWorkflowDefinition: vi.fn().mockResolvedValue({ id: "wf-external-block", name: "External block", ir }),
     listWorkflowWorkItemsForTask: vi.fn(async () => structuredClone(items)),
     replaceActiveTaskWorkflowContinuation: vi.fn(async (input: Record<string, unknown>) => {
       for (const item of items) {
@@ -133,6 +133,20 @@ async function createPrompt(root: string) {
   const promptPath = join(taskDir, "PROMPT.md");
   await writeFile(promptPath, "# Existing approved plan\n");
   return promptPath;
+}
+
+/*
+FNXC:ExternalBlockResumeRetarget 2026-11-05-23:04 (KB-008, SUBC-008 R2 fixture):
+Variant of the harness IR with a trailing terminal column the pipeline has no node for, so
+`resolveColumnResumeNode`'s forward BFS cannot answer a card parked there — the exact shape that
+makes a stale retarget unresolvable ("column done has no workflow entry node").
+*/
+function withTrailingDoneColumn(baseIr: unknown): unknown {
+  const ir = baseIr as { columns: Array<Record<string, unknown>> };
+  return {
+    ...(baseIr as Record<string, unknown>),
+    columns: [...ir.columns, { id: "done", name: "Done", traits: [{ trait: "complete" }] }],
+  };
 }
 
 afterEach(() => vi.restoreAllMocks());
@@ -335,6 +349,113 @@ describe("external-block Retry", () => {
     expect(items).toHaveLength(0);
     expect(store.replaceActiveTaskWorkflowContinuation).not.toHaveBeenCalled();
     expect(store.updateTask).not.toHaveBeenCalled();
+  });
+
+  /*
+  FNXC:ExternalBlockResumeUserPause 2026-11-05-23:04 (KB-008, SUBC-008 R1 regression):
+  A card the operator paused deliberately (userPaused raised by the dashboard pause endpoint) that
+  also carries freeze metadata must be refused by external-block Retry with zero mutation on both
+  surfaces: the locked preflight (route-level) and the retarget wrapper's live re-read.
+  */
+  it("refuses external-block Retry on a user-paused frozen card without mutating anything", async () => {
+    const row = blockedTask({ userPaused: true });
+    const before = structuredClone(row);
+    const { store, items } = createStore(row);
+
+    const response = await performRequest(createApp(store), "POST", "/api/tasks/FN-209/retry");
+
+    expect(response.status, JSON.stringify(response.body)).toBe(409);
+    expect(JSON.stringify(response.body)).toContain("user-paused");
+    expect(row).toEqual(before);
+    expect(row.userPaused).toBe(true);
+    expect(row.externalBlock).toBeDefined();
+    expect(items).toHaveLength(0);
+    expect(store.replaceActiveTaskWorkflowContinuation).not.toHaveBeenCalled();
+    expect(store.updateTask).not.toHaveBeenCalled();
+    expect(store.logEntry).not.toHaveBeenCalled();
+    expect(store.recordRunAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("refuses the retarget wrapper on a user-paused frozen card caught at the live re-check", async () => {
+    const row = blockedTask({ userPaused: true });
+    const before = structuredClone(row);
+    const { store, items } = createStore(row);
+
+    await expect(republishExternalBlockResumeAsStageRestart({
+      store: store as never,
+      taskId: row.id,
+      stale: { kind: "stale-node", frozenNodeId: "implement", entryNodeId: "code-review" },
+    })).rejects.toThrow("External-block Retry is unavailable: the card is user-paused; unpause it before retrying");
+
+    expect(row).toEqual(before);
+    expect(items).toHaveLength(0);
+    expect(store.replaceActiveTaskWorkflowContinuation).not.toHaveBeenCalled();
+    expect(store.updateTask).not.toHaveBeenCalled();
+    expect(store.logEntry).not.toHaveBeenCalled();
+    expect(store.recordRunAuditEvent).not.toHaveBeenCalled();
+  });
+
+  /*
+  FNXC:ExternalBlockResumeRetarget 2026-11-05-23:04 (KB-008, SUBC-008 R2 regression):
+  The three unresolvable refusal shapes must stay truthful conflicts that mutate nothing — the
+  fence stays intact for the operator to repair, so no continuation, metadata clear, task log, or
+  audit row may appear on any of them.
+  */
+
+  it("refuses a set-but-missing resume node id instead of falling back to the column entry", async () => {
+    const row = blockedTask({
+      externalBlock: {
+        ...blockedTask().externalBlock!,
+        resume: { ...blockedTask().externalBlock!.resume, nodeId: "ghost-node" },
+      },
+    });
+    const before = structuredClone(row);
+    const { store, items } = createStore(row);
+
+    await expect(resumeExternallyBlockedTask({ store: store as never, taskId: row.id }))
+      .rejects.toThrow("External-block Retry cannot resolve a workflow node for column building");
+
+    expect(row).toEqual(before);
+    expect(items).toHaveLength(0);
+    expect(store.replaceActiveTaskWorkflowContinuation).not.toHaveBeenCalled();
+    expect(store.updateTask).not.toHaveBeenCalled();
+    expect(store.logEntry).not.toHaveBeenCalled();
+    expect(store.recordRunAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("refuses the retarget when the advanced column has no workflow entry node", async () => {
+    const row = blockedTask({ column: "done" });
+    const before = structuredClone(row);
+    const { store, items } = createStore(row, withTrailingDoneColumn(IR));
+
+    await expect(resumeExternallyBlockedTask({ store: store as never, taskId: row.id }))
+      .rejects.toThrow("External-block Retry cannot retarget: node implement belongs to an earlier column and column done has no workflow entry node");
+
+    expect(row).toEqual(before);
+    expect(items).toHaveLength(0);
+    expect(store.replaceActiveTaskWorkflowContinuation).not.toHaveBeenCalled();
+    expect(store.updateTask).not.toHaveBeenCalled();
+    expect(store.logEntry).not.toHaveBeenCalled();
+    expect(store.recordRunAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("surfaces the stage-restart planner refusal as a conflict without mutating the frozen card", async () => {
+    const row = blockedTask({ column: "planning" });
+    const before = structuredClone(row);
+    const { store, items } = createStore(row);
+
+    await expect(republishExternalBlockResumeAsStageRestart({
+      store: store as never,
+      taskId: row.id,
+      stale: { kind: "stale-node", frozenNodeId: "implement", entryNodeId: "implement" },
+    })).rejects.toThrow("External-block Retry cannot retarget past node implement: no-entry-node-in-column");
+
+    expect(row).toEqual(before);
+    expect(items).toHaveLength(0);
+    expect(store.replaceActiveTaskWorkflowContinuation).not.toHaveBeenCalled();
+    expect(store.updateTask).not.toHaveBeenCalled();
+    expect(store.logEntry).not.toHaveBeenCalled();
+    expect(store.recordRunAuditEvent).not.toHaveBeenCalled();
   });
 
   it("refuses a retarget whose external block was already cleared by a concurrent retry", async () => {
