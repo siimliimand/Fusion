@@ -1654,6 +1654,18 @@ export function createServer(store: TaskStore, options?: ServerOptions): ReturnT
     // The recovery completes before the first request in practice (event loop
     // drains microtasks before I/O), and is best-effort regardless.
     void aiSessionStore.recoverStaleSessions();
+    /*
+    FNXC:MemoryWedge 2026-11-06-13:30:
+    FIX-13 (KB-010) accumulator fix: startScheduledCleanup existed but was NEVER called in
+    production — terminal and orphaned AI sessions were only removed by a manual
+    DELETE /api/ai-sessions/cleanup, so ai_sessions grew without bound (daily wedge,
+    2026-11-05). Start it at boot on the existing 6h cadence with the 7-day TTL default;
+    the paired stopScheduledCleanup() in the server "close" handler below keeps teardown
+    symmetric. Harmless when the store is an injected test double: the start call lands on
+    the store's own contract (test doubles stub it), and the integration-host override path
+    passes an explicit aiSessionStore with the same surface.
+    */
+    aiSessionStore.startScheduledCleanup(SESSION_CLEANUP_INTERVAL_MS, SESSION_CLEANUP_DEFAULT_MAX_AGE_MS);
     setPlanningAiSessionStore(aiSessionStore);
     setMissionAiSessionStore(aiSessionStore);
     setMilestoneSliceAiSessionStore(aiSessionStore);

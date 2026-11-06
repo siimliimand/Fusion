@@ -175,6 +175,18 @@ export class ActiveSessionRegistry {
   clear(): void {
     this.records.clear();
   }
+
+  /*
+  FNXC:StallSelfExit 2026-11-06-12:05 (FIX-13, KB-010):
+  Live-session count over the registry map. The CLI stall self-exit monitor needs a single
+  "is ANYTHING live" answer, not per-task probes: any registered session path (executor,
+  planning, step-session, workflow-step, ai-merge, workspace leases) means work is mid-flight
+  and the process must NEVER self-exit (the durable-write fence). Bounded O(1) read of the
+  map size — safe to call every monitor tick.
+  */
+  size(): number {
+    return this.records.size;
+  }
 }
 
 export interface SelfOwnedReconcileOptions {
@@ -321,6 +333,16 @@ const executingTasks = new Set<string>();
 export const executingTaskLock = {
   has(taskId: string): boolean {
     return executingTasks.has(taskId);
+  },
+  /*
+  FNXC:StallSelfExit 2026-11-06-12:05 (FIX-13, KB-010):
+  Live count of claimed executions. A nonzero value means at least one TaskExecutor.execute()
+  is mid-flight (a durable-write window), so the stall self-exit monitor treats it as live
+  work and refuses to exit. Complements size() on ActiveSessionRegistry for the single
+  "is ANYTHING live" liveness leg of the triple gate.
+  */
+  size(): number {
+    return executingTasks.size;
   },
   /** Synchronously claim the lock. Returns true if claimed, false if already held. */
   tryClaim(taskId: string): boolean {

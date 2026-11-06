@@ -173,6 +173,13 @@ export async function upsertAiSession(handle: QueryHandle, session: AiSessionRow
       },
     });
 
+  // FNXC:MemoryWedge 2026-11-06-13:30: the whole-row writer is the DOMINANT terminal-transition
+  // surface (planning/mission/interview persistSession calls), so a terminal upsert trims before
+  // the read-back so the returned row reflects the persisted, bounded state.
+  if (isTerminalAiSessionStatus(session.status)) {
+    await trimTerminalAiSessionConversationHistory(handle, session.id);
+  }
+
   const row = await getAiSession(handle, session.id);
   if (!row) throw new Error(`AiSession upsert for ${session.id} succeeded but row could not be read back`);
   return row;
@@ -276,6 +283,65 @@ export async function listRecoverableAiSessions(
 
 // ── Updates ──
 
+/*
+FNXC:MemoryWedge 2026-11-06-13:30:
+FIX-13 (KB-010) bounds the ai_sessions accumulator: planning and interview
+conversation_history grows with board size and session count against a fixed
+V8 old-space budget (~1GB observed wedging production daily, 2026-11-05). A
+terminal session (complete/error) never needs more than the recent tail, so
+every transition INTO a terminal status trims conversation_history to its
+last TERMINAL_CONVERSATION_TAIL_ENTRIES entries with ONE surgical conditional
+UPDATE — never a read-modify-write of the whole payload (FNXC:PlanningMultiTask
+2026-07-24 precedent). The `status IN ('complete','error')` WHERE guard means
+a racing non-terminal write can never be trimmed, and histories shorter than
+the tail are left semantically unchanged ($[(last-N) to last] clamps to the
+whole array; empty stays []). updatedAt is deliberately NOT bumped so the
+7-day cleanup TTL still expires old terminal rows on schedule.
+
+Seam note (verified against the tree 2026-11-06): terminal status transitions
+enter through THREE writers, not one — updateAiSessionStatus (status-only
+updates), upsertAiSession (whole-row persistSession writes from the
+planning/mission/interview flows), and recoverStaleAiSessions (boot orphan
+recovery straight to error). All three run the same guarded trim so the
+"terminal transcripts are bounded" invariant holds on every terminal surface;
+trimming only the status-only seam would leave the dominant whole-row writer
+unbounded.
+*/
+
+/** Terminal sessions keep at most this many conversation entries. */
+export const TERMINAL_CONVERSATION_TAIL_ENTRIES = 50;
+
+const TERMINAL_AI_SESSION_STATUSES = ["complete", "error"] as const;
+
+function isTerminalAiSessionStatus(status: AiSessionStatus): boolean {
+  return status === "complete" || status === "error";
+}
+
+// FNXC:MemoryWedge 2026-11-06-13:30: jsonpath range '$[(last-(N-1)) to last]' keeps the LAST N
+// entries and clamps to the full array when the array is shorter. The jsonb_typeof CASE leaves
+// non-array payloads untouched, and the coalesce normalizes a SQL NULL column back to [].
+const TERMINAL_HISTORY_TAIL_JSONPATH = sql.raw(
+  `'$[(last-${TERMINAL_CONVERSATION_TAIL_ENTRIES - 1}) to last]'`,
+);
+const conversationHistoryColumn = schema.project.aiSessions.conversationHistory;
+const TERMINAL_HISTORY_TAIL_EXPR = sql`coalesce(case when jsonb_typeof(${conversationHistoryColumn}) = 'array' then jsonb_path_query_array(${conversationHistoryColumn}, ${TERMINAL_HISTORY_TAIL_JSONPATH}) else ${conversationHistoryColumn} end, '[]'::jsonb)`;
+
+/**
+ * Trim one session's conversation_history to its terminal tail (see FNXC:MemoryWedge above).
+ * Returns true when a terminal row was trimmed; a racing non-terminal write makes this a no-op.
+ */
+export async function trimTerminalAiSessionConversationHistory(handle: QueryHandle, id: string): Promise<boolean> {
+  const result = await handle
+    .update(schema.project.aiSessions)
+    .set({ conversationHistory: TERMINAL_HISTORY_TAIL_EXPR })
+    .where(and(
+      eq(schema.project.aiSessions.id, id),
+      inArray(schema.project.aiSessions.status, [...TERMINAL_AI_SESSION_STATUSES]),
+    ))
+    .returning({ id: schema.project.aiSessions.id });
+  return result.length > 0;
+}
+
 export async function updateAiSessionStatus(
   handle: QueryHandle,
   id: string,
@@ -288,7 +354,12 @@ export async function updateAiSessionStatus(
     .set({ status, error: error ?? null, updatedAt: now })
     .where(eq(schema.project.aiSessions.id, id))
     .returning({ id: schema.project.aiSessions.id });
-  return result.length > 0;
+  const changed = result.length > 0;
+  // FNXC:MemoryWedge 2026-11-06-13:30: terminal transitions bound the persisted transcript tail.
+  if (changed && isTerminalAiSessionStatus(status)) {
+    await trimTerminalAiSessionConversationHistory(handle, id);
+  }
+  return changed;
 }
 
 /*
@@ -620,6 +691,13 @@ export async function recoverStaleAiSessions(handle: QueryHandle): Promise<numbe
     )
     .returning({ id: schema.project.aiSessions.id });
   recovered += withoutQuestion.length;
+
+  // FNXC:MemoryWedge 2026-11-06-13:30: boot orphan recovery is a terminal transition (to error);
+  // bound each recovered transcript like the other terminal writers. The guarded trim makes a
+  // session a concurrent process already revived a no-op.
+  for (const row of withoutQuestion) {
+    await trimTerminalAiSessionConversationHistory(handle, row.id);
+  }
 
   return recovered;
 }

@@ -54,6 +54,7 @@ import type {
 } from "../project/project-runtime.js";
 import { runtimeLog } from "../logger.js";
 import { getActiveNotificationService } from "../util/notifier.js";
+import { noteHealthyPass, noteWatchdogForceOpen } from "../util/runtime-stall-tracker.js";
 import { StuckTaskDetector } from "../healing/stuck-task-detector.js";
 import { UsageLimitPauser } from "../errors/usage-limit-detector.js";
 import { CredentialInstanceRotator } from "../credential-instance-rotation.js";
@@ -3212,6 +3213,11 @@ export class InProcessRuntime
       if (stalledMs < CONTINUATION_DRAIN_STALL_MS) return;
       const inFlightMs = this.workflowContinuationDrainSince > 0 ? now - this.workflowContinuationDrainSince : 0;
       runtimeLog.warn(`continuation-drain watchdog: previous drain still marked in-flight after ${Math.round(inFlightMs / 1000)}s — forcing the guard open (stalled ${Math.round(stalledMs / 1000)}s; last phase: ${this.workflowContinuationDrainPhase})`);
+      /* FIX-13 (KB-010) 2026-11-05-22:58: shared consecutive-stall evidence for the CLI self-exit monitor (see runtime-stall-tracker). */
+      noteWatchdogForceOpen("continuation-drain");
+    } else {
+      /* FIX-13 (KB-010) 2026-11-05-22:58: a normal (non-forced) drain pass proves the event loop is servicing work — resets the shared stall counter. */
+      noteHealthyPass("continuation-drain");
     }
     this.workflowContinuationDrainActive = true;
     this.workflowContinuationDrainSince = Date.now();

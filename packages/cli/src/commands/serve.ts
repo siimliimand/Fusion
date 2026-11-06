@@ -87,11 +87,28 @@ import { ensureBundledCursorRuntimePluginInstalled, ensureBundledDependencyGraph
 import { ensureCwdProjectRegistered } from "./ensure-project-registered.js";
 import { phaseTime } from "../startup-phase.js";
 import { sdNotifyReady, sdNotifyStopping, startSdWatchdog } from "../sd-notify.js";
+import { createHeapPressureMonitor, startEventLoopLagMonitor, type DiagnosticsLogger, type HeapPressureMonitor } from "./process-diagnostics.js";
 
 const DIAGNOSTIC_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 let diagnosticIntervalHandle: ReturnType<typeof setInterval> | null = null;
 let serveStartTime = 0;
 let serveDbHealthCheck: (() => boolean) | null = null;
+/*
+FNXC:HeapPressureDiagnostics 2026-11-05-23:02 (FIX-13, KB-010):
+serve.ts's duplicated diagnostics loop shares the heap-pressure monitor (two consecutive
+over-ratio readings -> retention-capped .heapsnapshot + PATH-only log, dir mode 0700) and the
+near-zero-cost event-loop lag monitor (>30s stall -> one heap-stats warn line) with dashboard
+and daemon. Snapshots contain process memory (credentials) — never commit, attach, or paste
+their contents.
+*/
+let serveHeapPressureMonitor: HeapPressureMonitor | null = null;
+let serveEventLoopLagMonitor: { stop(): void } | null = null;
+let serveHeapSnapshotsDir: string | null = null;
+const serveDiagnosticsLogger: DiagnosticsLogger = {
+  info: (message) => console.log(message),
+  warn: (message) => console.warn(message),
+  error: (message) => console.error(message),
+};
 
 async function resolveRuntimeProjectPath(): Promise<string> {
   try {
@@ -184,6 +201,9 @@ function stopDiagnosticInterval(): void {
     clearInterval(diagnosticIntervalHandle);
     diagnosticIntervalHandle = null;
   }
+  // FIX-13 (KB-010): stop the event-loop lag monitor alongside the diagnostics interval.
+  serveEventLoopLagMonitor?.stop();
+  serveEventLoopLagMonitor = null;
 }
 
 /**
@@ -203,9 +223,26 @@ function ensureProcessDiagnostics(): void {
   // Log initial diagnostics at startup (before store is created)
   logDiagnostics("serve");
 
+  /*
+  FNXC:HeapPressureDiagnostics 2026-11-05-23:02 (FIX-13, KB-010):
+  The 30-min tick records the memory reading through the shared heap-pressure monitor and the
+  lag monitor starts once alongside the interval; stopDiagnosticInterval stops it.
+  */
+  if (!serveHeapPressureMonitor) {
+    serveHeapPressureMonitor = createHeapPressureMonitor({
+      logger: serveDiagnosticsLogger,
+      prefix: "serve",
+      getSnapshotsDir: () => serveHeapSnapshotsDir,
+    });
+  }
+  if (!serveEventLoopLagMonitor) {
+    serveEventLoopLagMonitor = startEventLoopLagMonitor({ logger: serveDiagnosticsLogger, prefix: "serve" });
+  }
+
   // Register periodic diagnostics every 30 minutes
   diagnosticIntervalHandle = setInterval(() => {
     logDiagnostics("serve", serveDbHealthCheck ?? undefined);
+    serveHeapPressureMonitor?.recordReading(process.memoryUsage());
   }, DIAGNOSTIC_INTERVAL_MS);
   diagnosticIntervalHandle.unref?.(); // Don't prevent process exit
 
@@ -613,6 +650,13 @@ export async function runServe(
 
   // Set up database health check for diagnostics
   setServeDbHealthCheck(() => store.healthCheck());
+
+  /*
+  FNXC:HeapPressureDiagnostics 2026-11-05-23:02 (FIX-13, KB-010):
+  Heap snapshots land under the project's gitignored .fusion/ tree (dir created 0700 by the
+  capture helper), rooted at the store's project root.
+  */
+  serveHeapSnapshotsDir = join(store.getRootDir(), ".fusion", "diagnostics", "heapsnapshots");
 
   // Re-apply pause on the primary store when it is not the factory/cwd share
   // (non-cwd --project / fallback). No-op when already set on the shared store.

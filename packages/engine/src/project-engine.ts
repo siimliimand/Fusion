@@ -140,6 +140,7 @@ import {
 } from "./concurrency/verification-concurrency.js";
 import { runtimeLog } from "./logger.js";
 import { emitBoundedRunAudit, type RunAuditSinkHost } from "./util/emit-bounded-run-audit.js";
+import { noteHealthyPass, noteWatchdogForceOpen } from "./util/runtime-stall-tracker.js";
 
 class WorkspaceMergeDispatchBusyError extends Error {
   readonly retryable = true;
@@ -4311,6 +4312,11 @@ export class ProjectEngine {
       const stuckMs = this.mergeRunningSince > 0 ? Date.now() - this.mergeRunningSince : 0;
       if (stuckMs < 1_800_000) return;
       runtimeLog.warn(`merge-queue watchdog: previous drain still marked in-flight after ${Math.round(stuckMs / 1000)}s — forcing the guard open so merging resumes`);
+      /* FIX-13 (KB-010) 2026-11-05-22:58: shared consecutive-stall evidence for the CLI self-exit monitor (see runtime-stall-tracker). */
+      noteWatchdogForceOpen("merge-queue");
+    } else {
+      /* FIX-13 (KB-010) 2026-11-05-22:58: a normal (non-forced) pump pass proves the event loop is servicing work — resets the shared stall counter. */
+      noteHealthyPass("merge-queue");
     }
     this.mergeRunning = true;
     this.mergeRunningSince = Date.now();

@@ -36,6 +36,7 @@ import { planTaskWorktreePath, resolveTaskWorkingBranch } from "./worktree/workt
 import { schedulerLog } from "./logger.js";
 import { emitBoundedRunAudit } from "./util/emit-bounded-run-audit.js";
 import { createRepeatSuppressedLog } from "./util/repeat-suppressed-log.js";
+import { noteHealthyPass, noteWatchdogForceOpen } from "./util/runtime-stall-tracker.js";
 import { type PrMonitor, type PrComment } from "./merge/pr-monitor.js";
 import { reconcileMissionState, type MissionReconcileSource } from "./missions/mission-state-reconcile.js";
 import { resolveDedicatedPlannerColumnsForTask } from "./planner-lane-resolution.js";
@@ -2417,6 +2418,11 @@ export class Scheduler {
       const stuckMs = this.schedulingSince > 0 ? Date.now() - this.schedulingSince : 0;
       if (stuckMs < 600_000) return;
       schedulerLog.warn(`schedule watchdog: previous pass still marked in-flight after ${Math.round(stuckMs / 1000)}s — forcing the guard open so dispatch resumes`);
+      /* FIX-13 (KB-010) 2026-11-05-22:58: shared consecutive-stall evidence for the CLI self-exit monitor (see runtime-stall-tracker). */
+      noteWatchdogForceOpen("dispatch-schedule");
+    } else {
+      /* FIX-13 (KB-010) 2026-11-05-22:58: a normal (non-forced) dispatch pass proves the event loop is servicing work — resets the shared stall counter. */
+      noteHealthyPass("dispatch-schedule");
     }
     this.scheduling = true;
     this.schedulingSince = Date.now();

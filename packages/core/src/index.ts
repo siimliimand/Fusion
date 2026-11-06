@@ -3007,6 +3007,7 @@ export {
   recoverStaleAiSessions,
   cleanupOldAiSessions,
   cleanupStaleAiSessions,
+  trimTerminalAiSessionConversationHistory,
 } from "./async-stores/async-ai-session-store.js";
 export type {
   AiSessionRow as AsyncAiSessionRow,

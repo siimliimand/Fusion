@@ -118,6 +118,11 @@ import {
   startCloudLinkPresence,
   stopCloudLinkPresence,
   reconcileUnownedStaleMergeStamp,
+  /* FIX-13 (KB-010): stall-tracker + liveness seams for the triple-gated self-exit monitor. */
+  activeSessionRegistry,
+  executingTaskLock,
+  getConsecutiveStallCycles,
+  getRecentForceOpens,
 } from "@fusion/engine";
 import { setHostTaskStore, clearHostTaskStores } from "../extension.js";
 import { DefaultPackageManager, SettingsManager, discoverAndLoadExtensions, createExtensionRuntime } from "@earendil-works/pi-coding-agent";
@@ -133,6 +138,8 @@ import {
 import { promptForPort } from "./port-prompt.js";
 import { startMigrationHoldingServer } from "./migration-holding-server.js";
 import { sdNotifyReady, sdNotifyStopping, startSdWatchdog } from "../sd-notify.js";
+import { createHeapPressureMonitor, startEventLoopLagMonitor, type HeapPressureMonitor } from "./process-diagnostics.js";
+import { startStallSelfExitMonitor, type StallSelfExitMonitor } from "./process-stall-self-exit.js";
 import { ensureCwdProjectRegistered } from "./ensure-project-registered.js";
 import { createReadOnlyProviderSettingsView } from "./provider-settings.js";
 import { wrapAuthStorageWithApiKeyProviders } from "./provider-auth.js";
@@ -202,6 +209,29 @@ const DIAGNOSTIC_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 let diagnosticStartTime = 0;
 let diagnosticDbHealthCheck: (() => boolean) | null = null;
 let diagnosticStoreListenerCheck: (() => Record<string, number>) | null = null;
+/*
+FNXC:HeapPressureDiagnostics 2026-11-05-23:02 (FIX-13, KB-010):
+Sustained heap pressure (heapUsed/heapTotal > 0.9 on two consecutive 30-min readings) now
+captures a .heapsnapshot under <rootDir>/.fusion/diagnostics/heapsnapshots/ (dir mode 0700,
+`.fusion/` is gitignored, retention 3) and logs its PATH — evidence the operator needs to size
+--max-old-space-size, replacing the silent GC-thrash wedge of 2026-11-05. The lag monitor
+logs one line when the event loop stalls > 30s. Snapshots contain process memory
+(credentials) — never commit, attach, or paste their contents.
+*/
+let heapPressureMonitor: HeapPressureMonitor | null = null;
+let eventLoopLagMonitor: { stop(): void } | null = null;
+let diagnosticHeapSnapshotsDir: string | null = null;
+/*
+FNXC:StallSelfExit 2026-11-06-12:05 (FIX-13, KB-010):
+Triple-gated self-exit monitor for the daily wedge: 5 consecutive watchdog force-open cycles
+(engine RuntimeStallTracker) + health failing 3 consecutive monitor ticks + ZERO live work
+(no registered session, no executing lock). exit(1) → systemd Restart=on-failure restarts the
+unit and startup recovery reclaims in-flight work, replacing the manual restarts of
+2026-11-05. Leg 3 is the durable-write fence: with zero registered sessions/locks no merge,
+executor, planner, or land lease can be mid-flight. Wired after the store exists (needs
+store.healthCheck()); stopped at both shutdown sites via stopDiagnosticInterval().
+*/
+let stallSelfExitMonitor: StallSelfExitMonitor | null = null;
 
 const STREAM_LOG_FLUSH_IDLE_MS = 100;
 
@@ -457,9 +487,28 @@ function ensureProcessDiagnostics(logger: RuntimeLogger): void {
   // Log initial diagnostics at startup (before store is created)
   logDiagnostics(logger, "dashboard", diagnosticStartTime);
 
+  /*
+  FNXC:HeapPressureDiagnostics 2026-11-05-23:02 (FIX-13, KB-010):
+  The 30-min tick now also records the memory reading through the shared heap-pressure
+  monitor (two consecutive over-ratio readings -> retention-capped snapshot + path log),
+  and a near-zero-cost event-loop-lag monitor starts once alongside the interval so a >30s
+  stall logs heap stats immediately instead of surfacing only in the next tick.
+  */
+  if (!heapPressureMonitor) {
+    heapPressureMonitor = createHeapPressureMonitor({
+      logger,
+      prefix: "dashboard",
+      getSnapshotsDir: () => diagnosticHeapSnapshotsDir,
+    });
+  }
+  if (!eventLoopLagMonitor) {
+    eventLoopLagMonitor = startEventLoopLagMonitor({ logger, prefix: "dashboard" });
+  }
+
   // Register periodic diagnostics every 30 minutes
   diagnosticIntervalHandle = setInterval(() => {
     logDiagnostics(logger, "dashboard", diagnosticStartTime, diagnosticDbHealthCheck ?? undefined);
+    heapPressureMonitor?.recordReading(process.memoryUsage());
   }, DIAGNOSTIC_INTERVAL_MS);
   diagnosticIntervalHandle.unref?.(); // Don't prevent process exit
 
@@ -505,6 +554,13 @@ function stopDiagnosticInterval(): void {
     clearInterval(diagnosticIntervalHandle);
     diagnosticIntervalHandle = null;
   }
+  // FIX-13 (KB-010): both shutdown sites route through here — stop the lag monitor too.
+  eventLoopLagMonitor?.stop();
+  eventLoopLagMonitor = null;
+  // FIX-13 (KB-010): both shutdown sites route through here — stop the stall self-exit monitor
+  // so a graceful shutdown can never be mistaken for (or race) the wedge exit path.
+  stallSelfExitMonitor?.stop();
+  stallSelfExitMonitor = null;
 }
 
 /**
@@ -1102,6 +1158,33 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
 
   // Set up database health check for diagnostics
   setDiagnosticDbHealthCheck(() => store.healthCheck());
+
+  /*
+  FNXC:HeapPressureDiagnostics 2026-11-05-23:02 (FIX-13, KB-010):
+  The heap snapshot directory is rooted at the STORE's project root so snapshots land in the
+  project's already-gitignored .fusion/ tree (dir created 0700 by the capture helper). Set
+  here — after the store exists — because ensureProcessDiagnostics runs before boot.
+  */
+  diagnosticHeapSnapshotsDir = join(store.getRootDir(), ".fusion", "diagnostics", "heapsnapshots");
+
+  /*
+  FNXC:StallSelfExit 2026-11-06-12:05 (FIX-13, KB-010):
+  Wire the self-exit monitor now that the store (health seam) exists. All legs come from the
+  seams this process already owns: the engine RuntimeStallTracker counts watchdog force-opens,
+  the SAME store.healthCheck() the diagnostics DB-health check uses decides the health leg,
+  and the registry/lock sizes decide liveness. A 60s tick with a 3-tick health requirement and
+  a 5-cycle stall requirement means the exit can only fire after a sustained multi-minute
+  wedge — never on a transient. Healthy operation produces no logs and no exit.
+  */
+  if (!stallSelfExitMonitor) {
+    stallSelfExitMonitor = startStallSelfExitMonitor({
+      getConsecutiveStallCycles,
+      getRecentForceOpens,
+      isHealthFailing: () => !store.healthCheck(),
+      hasLiveWork: () => activeSessionRegistry.size() > 0 || executingTaskLock.size() > 0,
+      log: runtimeLogger,
+    });
+  }
 
   // Set up store listener count check for diagnostics
   setDiagnosticStoreListenerCheck(() => ({

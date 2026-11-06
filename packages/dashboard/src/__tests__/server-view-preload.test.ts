@@ -72,6 +72,9 @@ async function startServerWithFixture(clientDir: string) {
     recoverStaleSessions: async () => 0,
     listRecoverable: async () => [],
     cleanupStaleSessions: async () => ({ terminalDeleted: 0, orphanedDeleted: 0 }),
+    // FNXC:MemoryWedge 2026-11-06-13:30: KB-010 boots the scheduled AI-session cleanup, so inert
+    // doubles must stub the start call too (no-op here — nothing to schedule in this fixture).
+    startScheduledCleanup: () => undefined,
     stopScheduledCleanup: () => undefined,
   };
   const app = createServer(store, { aiSessionStore: aiSessionStore as never });

@@ -215,6 +215,7 @@ import { AgentLogger } from "./agents/agent-logger.js";
 import { attachAgentUsageTelemetry, emitAgentSessionStart } from "./agents/agent-usage-telemetry.js";
 import { emitApprovalMail } from "./agents/approval-mail.js";
 import { acquireActiveSessionPath, activeSessionRegistry } from "./agents/active-session-registry.js";
+import { noteHealthyPass, noteWatchdogForceOpen } from "./util/runtime-stall-tracker.js";
 import { isPlanningResetHoldClearingUpdate, PlanningResetFence } from "./planning-reset-fence.js";
 import { registerPlanningLivenessProbe } from "./agents/planning-liveness.js";
 import {
@@ -2419,6 +2420,11 @@ export class TriageProcessor {
       planLog.warn(
         `triage poll watchdog: previous poll still marked in-flight after ${Math.round(stuckMs / 1000)}s — forcing the guard open so planning admission resumes`,
       );
+      /* FIX-13 (KB-010) 2026-11-05-22:58: shared consecutive-stall evidence for the CLI self-exit monitor (see runtime-stall-tracker). */
+      noteWatchdogForceOpen("triage-poll");
+    } else {
+      /* FIX-13 (KB-010) 2026-11-05-22:58: a normal (non-forced) poll pass proves the event loop is servicing work — resets the shared stall counter. */
+      noteHealthyPass("triage-poll");
     }
     this.polling = true;
     this.pollingSince = Date.now();

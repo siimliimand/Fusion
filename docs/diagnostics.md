@@ -294,3 +294,50 @@ The dashboard HTTP server exposes **`GET /metrics`** — a plain-text Prometheus
 - **Endpoint acceptance** (`packages/dashboard/src/routes/__tests__/metrics-endpoint.test.ts`): drives `GET /metrics` through the real server creator and an independent exposition-text parser (`packages/dashboard/src/__tests__/prometheus-text-parse.ts`) to prove the served body is well-formed Prometheus text covering all five measurement gaps and is NOT the pre-RUFU-081 SPA `index.html` fallback, that a scrape writes no run-audit row, and that repeat scrapes render a fresh, bounded snapshot.
 - **Sampler acceptance** (`packages/dashboard/src/metrics/__tests__/metrics-samplers-acceptance.test.ts`): exercises the orchestrator `render()` end-to-end — synchronous pre-read render (no on-demand DB/ps on a scrape), all five family gaps as finite gauges, and the spawn-count hook incrementing on a real child process with the wrapper restored in `finally`.
 - **Parser unit cases** (`packages/dashboard/src/__tests__/prometheus-text-parse.test.ts`): gauge/counter `_total`/NaN/Inf/labeled families and non-exposition-text rejection.
+
+## Heap-pressure diagnostics and stall self-recovery (`FIX-13`, KB-010)
+
+Production engines that operate at the V8 old-space ceiling spend their CPU in garbage collection instead of work: health endpoints time out, watchdogs force-open their re-entrance guards every couple of minutes, and the process stays wedged until an operator restarts it. The 2026-11-05 incident on factory.webuilder.dev (heap at the ~1.0GB default budget, CPU pinned ~110%, `/api/health` dead, daily restart cadence) is the motivating case. Four mechanisms now address it: evidence capture when pressure is detected, bounded internal accumulators, a deliberate heap budget prepared as an operator drop-in, and a triple-gated graceful self-exit so systemd — not a human — performs the restart.
+
+### Heap-pressure snapshots (`[prefix] heap-pressure:`)
+
+The 30-minute process diagnostics loop in the `dashboard`, `serve`, and `daemon` CLI commands records each `process.memoryUsage()` reading. A reading is under pressure when `heapUsed / heapTotal > 0.9`; pressure FIRES only when the current AND previous reading are both under pressure, so a single transient spike never captures. On firing, a `.heapsnapshot` is written via `v8.writeHeapSnapshot` to `<rootDir>/.fusion/diagnostics/heapsnapshots/` — a gitignored directory created with mode `0700` (private to the `fusion` service user) — named `heap-<UTC-timestamp>-pid<pid>.heapsnapshot`, and the file PATH is logged as a warn line of the form `[dashboard] heap-pressure: heap snapshot written (evidence): <path> …`. Retention keeps the newest 3 files and prunes older ones; a re-entrancy guard skips a second concurrent capture; every error is logged, never thrown. The log line also carries the pressure ratio so operators can see the evidence without opening the file.
+
+### Event-loop lag monitor (`[prefix] event-loop-lag:`)
+
+The same three commands run a near-zero-cost lag monitor built on `perf_hooks.monitorEventLoopDelay` (10s sampling window, unref'd). When the max observed lag in a window exceeds 30 seconds, ONE warn line is emitted with heap stats — `[prefix] event-loop-lag: max lag Xs > 30s threshold — rss=… heap=…/… uptime=…` — and the histogram resets. Healthy operation is silent; there is no periodic lag chatter.
+
+### Bounded AI-session accumulators
+
+Planning and interview transcripts previously grew without bound: the 7-day session cleanup existed but was never scheduled in production, and terminal transcripts stayed in `ai_sessions.conversation_history` forever. Two fixes:
+
+- **Scheduled cleanup runs at boot** (every 6h, 7-day TTL via `SESSION_CLEANUP_DEFAULT_MAX_AGE_MS`), paired with the existing stop-site teardown. Previously cleanup only ran on a manual `DELETE /api/ai-sessions/cleanup`.
+- **Terminal transcripts are trimmed at every transition INTO `complete` or `error`** to the last 50 entries (`TERMINAL_CONVERSATION_TAIL_ENTRIES = 50`), applied at all three terminal-transition writers (`updateAiSessionStatus`, `upsertAiSession`, `recoverStaleAiSessions`) via one guarded conditional SQL UPDATE that jsonb-slices the tail — never a read-modify-write of the whole payload — and is guarded by `status IN ('complete','error')` so a racing non-terminal write can never be trimmed. Non-terminal transitions never trim; histories ≤ 50 entries and empty histories pass through unchanged.
+
+Run-audit events, the triage poll's candidate resolution (filter-first, bounded-batch), advisor log delta reads (bounded at 80 entries), listener-count diagnostics, and merge clean-room pruning were audited and confirmed already bounded; see the KB-010 task record for the evidence.
+
+### Stall self-exit (`[prefix] stall-self-exit:`)
+
+The engine's `RuntimeStallTracker` (`packages/engine/src/util/runtime-stall-tracker.ts`) counts CONSECUTIVE watchdog force-open cycles across all four force-open sites — `triage-poll`, `continuation-drain`, `merge-queue`, `dispatch-schedule` — and ANY healthy guard pass from ANY source resets the counter to 0 (a real wedge fires all watchdogs together; recovery shows normal passes). A CLI-side monitor in the `dashboard` command ticks every 60s and calls `process.exit(1)` only when ALL THREE legs hold: stall cycles ≥ 5, health failing on ≥ 3 consecutive ticks (the same `store.healthCheck()` seam the diagnostics use), and zero live work (no active-session registry entry of any kind and no executing-task lock). The liveness fence is the durable-write protection — with zero registered sessions and locks, no merge, executor, planner, or land lease can be mid-flight. Before exiting it logs one loud evidence line (cycle count, recent force-open sources with timestamps, heap stats, uptime), and `exit(1)` is the recovery contract: systemd's `Restart=on-failure` + `RestartSec=5` restarts the unit, and startup recovery reclaims in-flight work (proven on SUBC-016/021, 2026-11-05). The self-exit is the bounded LAST RESORT after evidence capture failed to prevent the wedge — it never replaces the deliberate budget/throttle below, and healthy boards never produce snapshots, lag lines, or exits.
+
+### Deliberate heap budget and soft throttle (operator drop-in)
+
+The production unit is given `NODE_OPTIONS=--max-old-space-size=4096` and `MemoryHigh=12G` via a DROP-IN at `/etc/systemd/system/fusion.service.d/override.conf` (buildable with `node scripts/lib/fusion-unit-override.mjs`; install/verify/rollback runbook in the KB-010 task documents). `MemoryHigh` is a SOFT throttle — the kernel reclaims and throttles before any kill. `MemoryMax` is deliberately forbidden: a hard cgroup kill can truncate a durable PostgreSQL write, and postgres shares this cgroup. The 4096 value is the recommendation for a 48GB host sized from the 2026-11-05 incident; confirm it against the first captured heap snapshot and adjust if needed. `Restart=on-failure` must remain set for the self-exit contract above. The drop-in composes with KB-003 (FIX-12b) main-unit changes without conflict. The monitors are wired into the `dashboard`, `serve`, and `daemon` CLI commands; the Electron desktop runtime is deliberately not wired (same exclusion as FIX-12b).
+
+### Operator verification
+
+```bash
+# Soft throttle visible on the unit:
+systemctl show fusion.service -p MemoryHigh
+# Heap budget reached the Node process:
+tr '\0' '\n' < /proc/$(systemctl show -p MainPID --value fusion.service)/environ | grep NODE_OPTIONS
+# Health after restart:
+curl -fsS http://127.0.0.1:4040/api/health
+```
+
+Healthy operation produces NO `.heapsnapshot` files, NO `[prefix] event-loop-lag:` warns, and NO `[prefix] stall-self-exit:` lines. Evidence lines land in `journalctl -u fusion.service` and follow the existing `[prefix] …` grep shape.
+
+### SECURITY: heap snapshots contain process memory
+
+A `.heapsnapshot` captures the full JS heap and can contain bearer tokens, API keys, and other secrets held by the process. Never commit one, never attach one to a task or issue, never paste its contents into logs or tickets. Share only the file path and file size; inspect locally with proper access controls, and delete snapshots when the incident is closed (retention prunes automatically at 3).
+

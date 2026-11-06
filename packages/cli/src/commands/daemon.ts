@@ -85,10 +85,38 @@ import { handleOpencodeGoApiKeySaved, syncStartupModels } from "./startup-model-
 import { registerCustomProviders, reregisterCustomProviders } from "./custom-provider-registry.js";
 import { ensureCwdProjectRegistered } from "./ensure-project-registered.js";
 import { sdNotifyReady, sdNotifyStopping, startSdWatchdog } from "../sd-notify.js";
+import { createHeapPressureMonitor, startEventLoopLagMonitor, type DiagnosticsLogger, type HeapPressureMonitor } from "./process-diagnostics.js";
 
 const DIAGNOSTIC_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 let daemonStartTime = 0;
 let daemonDbHealthCheck: (() => boolean) | null = null;
+/*
+FNXC:HeapPressureDiagnostics 2026-11-05-23:02 (FIX-13, KB-010):
+daemon.ts's duplicated diagnostics loop shares the heap-pressure monitor (two consecutive
+over-ratio readings -> retention-capped .heapsnapshot + PATH-only log, dir mode 0700) and the
+near-zero-cost event-loop lag monitor (>30s stall -> one heap-stats warn line) with dashboard
+and serve. Snapshots contain process memory (credentials) — never commit, attach, or paste
+their contents.
+*/
+let daemonDiagnosticIntervalHandle: ReturnType<typeof setInterval> | null = null;
+let daemonHeapPressureMonitor: HeapPressureMonitor | null = null;
+let daemonEventLoopLagMonitor: { stop(): void } | null = null;
+let daemonHeapSnapshotsDir: string | null = null;
+const daemonDiagnosticsLogger: DiagnosticsLogger = {
+  info: (message) => console.log(message),
+  warn: (message) => console.warn(message),
+  error: (message) => console.error(message),
+};
+
+/** Stop the diagnostics interval and lag monitor (daemon shutdown path). */
+function stopDaemonDiagnosticInterval(): void {
+  if (daemonDiagnosticIntervalHandle) {
+    clearInterval(daemonDiagnosticIntervalHandle);
+    daemonDiagnosticIntervalHandle = null;
+  }
+  daemonEventLoopLagMonitor?.stop();
+  daemonEventLoopLagMonitor = null;
+}
 
 async function resolveRuntimeProjectPath(): Promise<string> {
   try {
@@ -542,6 +570,13 @@ export async function runDaemon(opts: DaemonOptions = {}) {
   // Set up database health check for diagnostics
   daemonDbHealthCheck = () => store.healthCheck();
 
+  /*
+  FNXC:HeapPressureDiagnostics 2026-11-05-23:02 (FIX-13, KB-010):
+  Heap snapshots land under the project's gitignored .fusion/ tree (dir created 0700 by the
+  capture helper), rooted at the store's project root.
+  */
+  daemonHeapSnapshotsDir = join(store.getRootDir(), ".fusion", "diagnostics", "heapsnapshots");
+
   if (opts.paused) {
     await store.updateSettings({ enginePaused: true });
     console.log("[engine] Starting in paused mode — automation disabled");
@@ -881,9 +916,26 @@ export async function runDaemon(opts: DaemonOptions = {}) {
     : undefined;
 
   // Diagnostic interval
-  setInterval(() => {
+  /*
+  FNXC:HeapPressureDiagnostics 2026-11-05-23:02 (FIX-13, KB-010):
+  The 30-min tick records the memory reading through the shared heap-pressure monitor and the
+  lag monitor starts once alongside the interval; stopDaemonDiagnosticInterval stops both.
+  */
+  if (!daemonHeapPressureMonitor) {
+    daemonHeapPressureMonitor = createHeapPressureMonitor({
+      logger: daemonDiagnosticsLogger,
+      prefix: "daemon",
+      getSnapshotsDir: () => daemonHeapSnapshotsDir,
+    });
+  }
+  if (!daemonEventLoopLagMonitor) {
+    daemonEventLoopLagMonitor = startEventLoopLagMonitor({ logger: daemonDiagnosticsLogger, prefix: "daemon" });
+  }
+  daemonDiagnosticIntervalHandle = setInterval(() => {
     logDiagnostics(daemonDbHealthCheck ?? undefined);
-  }, DIAGNOSTIC_INTERVAL_MS).unref?.();
+    daemonHeapPressureMonitor?.recordReading(process.memoryUsage());
+  }, DIAGNOSTIC_INTERVAL_MS);
+  daemonDiagnosticIntervalHandle.unref?.();
 
   const app = createServer(store, {
     engine: primaryEngine,
@@ -1073,6 +1125,9 @@ export async function runDaemon(opts: DaemonOptions = {}) {
   const shutdown = async (signal?: NodeJS.Signals) => {
     if (shuttingDown) return;
     shuttingDown = true;
+
+    // FIX-13 (KB-010): stop the diagnostics interval + event-loop lag monitor first.
+    stopDaemonDiagnosticInterval();
 
     /*
     FNXC:SdNotifyWatchdog 2026-11-06-06:42:

@@ -68,6 +68,8 @@ function createInertOptions() {
     chatStore: Object.assign(new EventEmitter(), { deleteSessionsForAgentId: vi.fn().mockResolvedValue(undefined) }) as never,
     aiSessionStore: Object.assign(new EventEmitter(), {
       recoverStaleSessions: vi.fn().mockResolvedValue(undefined), rehydrateFromStore: vi.fn().mockResolvedValue(0),
+      // FNXC:MemoryWedge 2026-11-06-13:30: KB-010 boots the scheduled AI-session cleanup.
+      startScheduledCleanup: vi.fn(),
       stopScheduledCleanup: vi.fn(), cleanupStaleSessions: vi.fn().mockResolvedValue({ terminalDeleted: 0, orphanedDeleted: 0 }),
     }) as never,
   };

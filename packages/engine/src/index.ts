@@ -699,6 +699,8 @@ export {
   type MockScriptContext,
 } from "./providers/index.js";
 export { activeSessionRegistry } from "./agents/active-session-registry.js";
+/* FIX-13 (KB-010) 2026-11-06-12:05: executingTaskLock.size() feeds the CLI stall self-exit liveness leg. */
+export { executingTaskLock } from "./agents/active-session-registry.js";
 export {
   scanIdleWorktrees,
   cleanupOrphanedWorktrees,
@@ -738,6 +740,15 @@ export {
   type ExternalIntegrationManifestValidationResult,
 } from "./external-integrations/index.js";
 export { fetchWebContent, assertSafeUrl, WebFetchError, type WebFetchOptions, type WebFetchResult, type WebFetchErrorCode } from "./util/web-fetch.js";
+/* FIX-13 (KB-010) 2026-11-05-22:58: shared watchdog stall evidence consumed by the CLI stall self-exit monitor. */
+export {
+  noteWatchdogForceOpen,
+  noteHealthyPass,
+  getConsecutiveStallCycles,
+  getRecentForceOpens,
+  resetForTests,
+  type WatchdogForceOpenEvent,
+} from "./util/runtime-stall-tracker.js";
 export { classifyTaskError, type ErrorClass, type TaskErrorClassification } from "./errors/error-classifier.js";
 export {
   buildGoalContextSection,
