@@ -36,7 +36,7 @@ export const DEFAULT_MAX_WORKTREES = DEFAULT_PROJECT_SETTINGS.maxWorktrees;
 export const DEFAULT_MAX_CONCURRENT = DEFAULT_PROJECT_SETTINGS.maxConcurrent;
 
 /** Settings-like input accepted by every live, fast, and fallback capacity reader. */
-export type ConcurrencySettingsInput = Partial<Pick<Settings, "maxConcurrent" | "maxWorktrees" | "worktreeLimitEnabled">> | Record<string, unknown> | null | undefined;
+export type ConcurrencySettingsInput = Partial<Pick<Settings, "maxConcurrent" | "maxWorktrees" | "worktreeLimitEnabled" | "planReviewCapacityWakeAgeMinutes">> | Record<string, unknown> | null | undefined;
 
 /*
 FNXC:CapacityModel 2026-07-28-11:20:
@@ -106,6 +106,33 @@ export function resolveMaxConcurrentSetting(settings: ConcurrencySettingsInput):
   return typeof value === "number" && Number.isFinite(value) && value > 0
     ? value
     : DEFAULT_MAX_CONCURRENT;
+}
+
+/*
+FNXC:PlanReviewCapacityWake 2026-11-06-06:07:
+Shipped default for the poll-boundary age priority; kept beside the other capacity
+resolvers so the "what does an absent/invalid value mean" answer lives in one place.
+30 minutes matches DEFAULT_PROJECT_SETTINGS.planReviewCapacityWakeAgeMinutes.
+*/
+export const DEFAULT_PLAN_REVIEW_CAPACITY_WAKE_AGE_MS = 30 * 60_000;
+
+/**
+ * FNXC:PlanReviewCapacityWake 2026-11-06-06:07:
+ * Resolves how long a capacity-suspended plan-review continuation must have waited
+ * before the triage planning poll may admit it ahead of fresh intake.
+ *
+ * Follows the {@link resolveWorktreeCapacityLimit} pattern: the live project settings
+ * blob is authoritative; undefined/non-numeric/non-finite/negative values fall back to
+ * the shipped default. A configured ZERO is HONORED (returns 0ms = no age gate — a
+ * suspended row is priority-admitted immediately), because zero is a legible operator
+ * statement, not a missing value.
+ */
+export function resolvePlanReviewCapacityWakeAgeMs(settings: ConcurrencySettingsInput): number {
+  const value = settings?.planReviewCapacityWakeAgeMinutes;
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return DEFAULT_PLAN_REVIEW_CAPACITY_WAKE_AGE_MS;
+  }
+  return value * 60_000;
 }
 
 export interface EffectiveConcurrency {

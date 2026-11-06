@@ -276,4 +276,106 @@ describe("plan admission throttle run-audit (FN-8600)", () => {
     const serialized = JSON.stringify(throttle!.metadata ?? {});
     expect(serialized).not.toContain("favorite projects");
   });
+
+  /*
+  FNXC:PlanReviewCapacityWake 2026-11-06-06:07 (KB-009 / FIX-12, SUBC-016):
+  When capacity is the reason nothing can start, the throttle audit must say HOW LONG
+  the oldest capacity-suspended review continuation has already waited — the SUBC-016
+  incident sat ~33h with no audit row carrying that staleness. The fields are ids/
+  counts only and are deliberately OUTSIDE the dedupe signature (staleness jitters
+  every poll), so the sustained-stall dedupe behavior above is unchanged.
+  */
+  it("carries the oldest suspended-capacity wait when a held capacity row exists", async () => {
+    const store = createStore([eligibleTodoTask("FN-8600")], recorded);
+    const nowMs = Date.now();
+    const heldCapacityRow = {
+      id: "wi-capacity",
+      runId: "run-1",
+      taskId: "FN-SUSPENDED",
+      nodeId: "plan-review",
+      kind: "task" as const,
+      state: "held" as const,
+      attempt: 1,
+      retryAfter: null,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      lastError: null,
+      blockedReason: null,
+      stableWorkflowRunId: "FN-SUSPENDED:workflow",
+      continuationSequence: 1,
+      waitReason: "capacity" as const,
+      sourceColumn: "todo",
+      targetColumn: "in-progress",
+      irHash: null,
+      principalAgentId: null,
+      workflowRole: null,
+      authorityKind: null,
+      nodeInstanceId: null,
+      createdAt: new Date(nowMs - 2 * 60 * 60_000).toISOString(),
+      updatedAt: new Date(nowMs - 2 * 60 * 60_000).toISOString(),
+    };
+    (store as unknown as { listDueWorkflowWorkItems: unknown }).listDueWorkflowWorkItems = vi
+      .fn()
+      .mockResolvedValue([heldCapacityRow]);
+
+    await pollWithExhaustedProjectCapacity(store);
+
+    const throttle = recorded.find((event) => event.type === "task:plan-admission-throttled");
+    expect(throttle).toBeDefined();
+    expect(throttle!.metadata).toMatchObject({ suspendedReviewCount: 1 });
+    const oldest = throttle!.metadata?.oldestSuspendedReviewMs as number;
+    expect(oldest).toBeGreaterThanOrEqual(2 * 60 * 60_000 - 5_000);
+    expect(oldest).toBeLessThanOrEqual(2 * 60 * 60_000 + 5_000);
+  });
+
+  it("reports null staleness and zero count when no capacity row is suspended", async () => {
+    const store = createStore([eligibleTodoTask("FN-8600")], recorded);
+    (store as unknown as { listDueWorkflowWorkItems: unknown }).listDueWorkflowWorkItems = vi
+      .fn()
+      .mockResolvedValue([]);
+
+    await pollWithExhaustedProjectCapacity(store);
+
+    const throttle = recorded.find((event) => event.type === "task:plan-admission-throttled");
+    expect(throttle).toBeDefined();
+    expect(throttle!.metadata).toMatchObject({ oldestSuspendedReviewMs: null, suspendedReviewCount: 0 });
+  });
+
+  it("ignores held rows that are not the capacity shape (planning wait / blocker-owned)", async () => {
+    const store = createStore([eligibleTodoTask("FN-8600")], recorded);
+    const base = {
+      id: "wi-x",
+      runId: "run-1",
+      nodeId: "plan-review",
+      attempt: 1,
+      retryAfter: null,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      lastError: null,
+      stableWorkflowRunId: null,
+      continuationSequence: 1,
+      sourceColumn: null,
+      targetColumn: null,
+      irHash: null,
+      principalAgentId: null,
+      workflowRole: null,
+      authorityKind: null,
+      nodeInstanceId: null,
+      createdAt: new Date(Date.now() - 60 * 60_000).toISOString(),
+      updatedAt: new Date(Date.now() - 60 * 60_000).toISOString(),
+    };
+    (store as unknown as { listDueWorkflowWorkItems: unknown }).listDueWorkflowWorkItems = vi
+      .fn()
+      .mockResolvedValue([
+        { ...base, id: "wi-planning", taskId: "FN-A", kind: "task" as const, state: "held" as const, waitReason: "planning" as const, blockedReason: null },
+        { ...base, id: "wi-principal", taskId: "FN-B", kind: "task" as const, state: "held" as const, waitReason: null, blockedReason: "workflow-principal-triage" },
+        { ...base, id: "wi-manual", taskId: "FN-C", kind: "manual-hold" as const, state: "held" as const, waitReason: "capacity" as const, blockedReason: null },
+      ]);
+
+    await pollWithExhaustedProjectCapacity(store);
+
+    const throttle = recorded.find((event) => event.type === "task:plan-admission-throttled");
+    expect(throttle).toBeDefined();
+    expect(throttle!.metadata).toMatchObject({ oldestSuspendedReviewMs: null, suspendedReviewCount: 0 });
+  });
 });

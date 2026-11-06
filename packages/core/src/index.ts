@@ -571,7 +571,7 @@ export {
 } from "./plugins/plugin-gate-verdict.js";
 export type { PluginGateVerdict, ColumnPluginGate } from "./plugins/plugin-gate-verdict.js";
 // ── U6: workflow capacity (WIP) resolution shared by store + sweep ───────────
-export { resolveColumnCapacity, resolveWipBudgetColumns, DEFAULT_WORKFLOW_POOL_ID, resolveCapacityPoolId, resolveWorktreeCapacityLimit, resolveMaxConcurrentSetting, resolveEffectiveConcurrency, DEFAULT_MAX_CONCURRENT, DEFAULT_MAX_WORKTREES } from "./workflows/workflow-capacity.js";
+export { resolveColumnCapacity, resolveWipBudgetColumns, DEFAULT_WORKFLOW_POOL_ID, resolveCapacityPoolId, resolveWorktreeCapacityLimit, resolveMaxConcurrentSetting, resolvePlanReviewCapacityWakeAgeMs, resolveEffectiveConcurrency, DEFAULT_MAX_CONCURRENT, DEFAULT_MAX_WORKTREES, DEFAULT_PLAN_REVIEW_CAPACITY_WAKE_AGE_MS } from "./workflows/workflow-capacity.js";
 export { createWorkflowEventBus, getWorkflowEventBus, emitWorkflowLifecycleEvent, resetWorkflowEventBusForTesting } from "./workflow-events.js";
 export { IMPLEMENTATION_EXITS } from "./types/workflow-events.js";
 export type { ImplementationExit } from "./types/workflow-events.js";

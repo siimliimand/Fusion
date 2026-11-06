@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import type {
   TaskStore,
   Task,
+  Settings,
   CentralCore,
   AgentStore,
   HeartbeatInvocationSource,
@@ -70,6 +71,12 @@ import { generateSyntheticRunId } from "../util/run-audit.js";
 import { emitBoundedRunAudit } from "../util/emit-bounded-run-audit.js";
 import { setImmediate as setImmediateCb } from "node:timers";
 import { seedPreReleasePlanReviewContinuation, type PlanReviewSeedBailReason } from "../plan-review-continuation.js";
+import { isTaskPlanningOrExecutionLive } from "../agents/planning-execution-liveness.js";
+import {
+  CAPACITY_WAKE_SCAN_LIMIT,
+  selectCapacityWakeCandidates,
+  type CapacityWakePassDeps,
+} from "../workflows/capacity-wake.js";
 import {
   formatAdmissionCapacityQueuedReason,
   persistedTopLevelAgentTaskIdsFromStore,
@@ -815,6 +822,109 @@ export async function releaseFileScopeWaitingContinuations(
   return released;
 }
 
+/**
+ * FNXC:PlanReviewCapacityWake 2026-11-06-06:07 (KB-009 / FIX-12, SUBC-016):
+ * One capacity-wake pass: flip bounded, oldest-first `held` `waitReason:"capacity"`
+ * continuations back to `runnable` so the EXISTING drain + admission gates own the
+ * dispatch. This is the wake-on-release trigger half of the fix — the reclaim sweep
+ * stays untouched as the safety net; this pass is additive and must never bypass a
+ * gate, so it only ever changes trigger TIMING (held → runnable), never admission.
+ *
+ * Gates honored before any write: global/engine pause refuses everything; per-row
+ * fences (paused, userPaused, approval-held, autoMerge:false, terminal, deleted,
+ * live, blocked-reason) are the selector's contract. CAS on `expectedState:"held"`
+ * means a concurrent writer racing the wake simply wins and this pass skips.
+ *
+ * Audit: `task:capacity-wake-resumed` per flipped row through the FN-9175 bounded
+ * seam, DETACHED — a throwing/hanging/absent sink cannot delay or fail the wake,
+ * because trigger timing is exactly what must not wait on telemetry. Metadata is
+ * ids/counts only (taskId, workItemId, nodeId, waitedMs).
+ *
+ * Extracted from the runtime method for the same reason drainDuePlanningContinuations
+ * was: the method is private on a class whose construction attaches to the real
+ * project registry, so no test could tell "the wake respects the fences" from "the
+ * wake ignores them" without it.
+ */
+export async function runCapacityWakePass(
+  deps: CapacityWakePassDeps,
+  opts: { minAgeMs?: number } = {},
+): Promise<number> {
+  const store = deps.store;
+  if (
+    typeof store.listDueWorkflowWorkItems !== "function" ||
+    typeof store.transitionWorkflowWorkItem !== "function" ||
+    typeof store.getSettings !== "function"
+  ) {
+    return 0;
+  }
+  const settings = await store.getSettings().catch(() => null);
+  /*
+  FNXC:EnginePause 2026-11-06-06:07:
+  Same posture as the drain's engine-pause gate: a paused engine must not re-arm
+  suspended work even though the rows it would flip are only "runnable", not live.
+  Unreadable settings proceed as before rather than wedging the wake.
+  */
+  if (settings?.globalPause === true || settings?.enginePaused === true) return 0;
+
+  const heldItems = await store
+    .listDueWorkflowWorkItems({ kinds: ["task"], states: ["held"], limit: CAPACITY_WAKE_SCAN_LIMIT })
+    .catch(() => []);
+  if (heldItems.length === 0) return 0;
+
+  const now = deps.now ?? Date.now;
+  const { candidates } = await selectCapacityWakeCandidates({
+    items: heldItems,
+    now: now(),
+    minAgeMs: opts.minAgeMs ?? 0,
+    /*
+    FNXC:PlanReviewCapacityWake 2026-11-06-07:20:
+    Unreadable settings fall back to an empty blob (the selector reads only
+    `autoMerge` through `resolveEffectiveAutoMerge`, and undefined is not `false`),
+    keeping the wake's proceed-as-before posture instead of wedging on telemetry-
+    adjacent store failures.
+    */
+    settings: settings ?? ({} as Settings),
+    getTask: (taskId) => Promise.resolve(store.getTask(taskId)),
+    resolveTerminalColumns: deps.resolveTerminalColumns,
+    isTaskLive: deps.isTaskLive,
+  });
+
+  let flipped = 0;
+  for (const candidate of candidates) {
+    const transitioned = await store
+      .transitionWorkflowWorkItem(candidate.item.id, "runnable", {
+        expectedState: "held",
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        blockedReason: null,
+        retryAfter: null,
+        lastError: null,
+      })
+      .catch(() => null);
+    if (!transitioned || transitioned.state !== "runnable") continue;
+    flipped += 1;
+    const waitedMs = Number.isFinite(candidate.waitedMs)
+      ? Math.max(0, Math.round(candidate.waitedMs))
+      : 0;
+    void emitBoundedRunAudit(store, {
+      taskId: candidate.item.taskId,
+      agentId: "runtime",
+      runId: generateSyntheticRunId("capacity-wake", candidate.item.taskId),
+      domain: "database",
+      mutationType: "task:capacity-wake-resumed",
+      target: candidate.item.taskId,
+      metadata: {
+        taskId: candidate.item.taskId,
+        workItemId: candidate.item.id,
+        nodeId: candidate.item.nodeId,
+        waitedMs,
+      },
+    });
+  }
+  if (flipped > 0) await deps.drain();
+  return flipped;
+}
+
 /*
 FNXC:PlanningContinuationDispatch 2026-09-17-01:05:
 `workflow-continuation-capacity.test.ts` (pre-existing, not part of this reimplementation's scope)
@@ -832,6 +942,15 @@ export function createPlanningContinuationDispatcher(input: {
   projectId: string;
   execute: (task: Task) => Promise<void>;
   kick?: () => void;
+  /*
+   * FNXC:PlanReviewCapacityWake 2026-11-06-06:07:
+   * Release event fired (error-contained by the caller-facing closure below) AFTER a
+   * dispatched continuation settles — covering graph runs dispatched from held
+   * capacity rows, whose runs hold NO pre-held executor slot and therefore never
+   * reach the executor's own slot-release hook. The runtime wires this to the same
+   * capacity wake so the freed slot re-arms the next suspended row immediately.
+   */
+  onSlotReleased?: () => void;
   onError?: (task: Task, item: WorkflowWorkItem, error: unknown) => void;
 }): (task: Task, item: WorkflowWorkItem) => Promise<boolean> {
   return (task, item) => admitPlanningContinuation({
@@ -844,6 +963,13 @@ export function createPlanningContinuationDispatcher(input: {
         input.onError?.(task, item, error);
       });
       await settlePlanningContinuationDispatch({ store: input.store, taskId: task.id, itemId: item.id, kick: input.kick });
+      if (input.onSlotReleased) {
+        try {
+          input.onSlotReleased();
+        } catch {
+          /* error-contained: a wake failure must never fail the settled run */
+        }
+      }
     },
   });
 }
@@ -1646,6 +1772,17 @@ export class InProcessRuntime
         */
         getLocalNodeId: () => this.localNodeId,
         /*
+         * FNXC:PlanReviewCapacityWake 2026-11-06-06:07:
+         * The executor fires this ONLY when its finally actually dropped a
+         * scheduler-registered pre-held slot (a top-level agent slot was released).
+         * The capacity wake attempts resume of capacity-suspended continuations so a
+         * card parked at a column boundary starts on THIS release instead of waiting
+         * for the reclaim sweep — the SUBC-016 starvation's trigger-timing fix.
+         */
+        onExecutionSlotReleased: () => {
+          this.requestCapacityWake();
+        },
+        /*
         FNXC:WorkflowAgentRouting 2026-08-07-22:39:
         FN-8764 made every role-classified graph node (execute / step-execute / review / merge)
         resolve a permanent principal through `options.agentStore`, and fail closed with
@@ -1928,8 +2065,26 @@ export class InProcessRuntime
           onSpecifyError: (t, e) => {
             runtimeLog.error(`Triage failed for ${t.id}: ${e.message}`);
           },
+          /*
+           * FNXC:PlanReviewCapacityWake 2026-11-06-06:07:
+           * The poll's boundary age-priority hook. Wired to the runtime wake with the
+           * poll-resolved threshold so an aged suspended plan-review continuation is
+           * admitted before fresh intake in the same poll; the drain pass the wake
+           * awaits dispatches it through the REAL admission gates.
+           */
+          wakeSuspendedCapacityContinuations: async ({ ageThresholdMs }) =>
+            this.wakeCapacitySuspendedContinuations({ minAgeMs: ageThresholdMs }),
           // Planning and execution share project admission capacity; this callback only nudges discovery.
           onPlanningSlotReleased: () => {
+            /*
+             * FNXC:PlanReviewCapacityWake 2026-11-06-06:07:
+             * A settled planning promise releases a shared project slot. Wake the
+             * capacity-suspended continuations BEFORE nudging the scheduler so the
+             * aged suspended row's resume attempt is queued ahead of the scheduler's
+             * own pass; both are advisory nudges and every admission gate still
+             * applies. Error-contained inside the wake.
+             */
+            this.requestCapacityWake();
             void this.scheduler?.schedule();
           },
         },
@@ -2941,6 +3096,87 @@ export class InProcessRuntime
     });
   }
 
+  /*
+   * FNXC:PlanReviewCapacityWake 2026-11-06-06:07 (KB-009 / FIX-12, SUBC-016):
+   * Wake-on-release re-entry state. A release event arriving while a wake pass is
+   * mid-flight must not be LOST (a release that freed a slot for row B lands while
+   * row A's dispatch is still being awaited by the first pass), so — mirroring the
+   * drain's own pending re-kick — the suppressed request re-arms once the in-flight
+   * pass settles. At most one pass owns the wake state at a time; re-entry collapses
+   * to a single follow-up pass.
+   */
+  private capacityWakeInFlight = false;
+  private capacityWakePending = false;
+
+  /**
+   * FNXC:PlanReviewCapacityWake 2026-11-06-06:07 (KB-009 / FIX-12, SUBC-016):
+   * Attempt resume of capacity-suspended continuations, oldest-first, through the
+   * EXISTING admission gates. Triggered by slot-release events (executor completion,
+   * continuation-dispatch settle, planning finish) and — with the age threshold —
+   * at the triage planning-poll boundary. The ~10-minute self-healing reclaim sweep
+   * remains the safety net; this is additive trigger timing only. Returns the number
+   * of rows flipped `held → runnable`. No-op when the runtime is not active.
+   */
+  async wakeCapacitySuspendedContinuations(opts?: { minAgeMs?: number }): Promise<number> {
+    if (this.status !== "active") return 0;
+    if (this.capacityWakeInFlight) {
+      this.capacityWakePending = true;
+      return 0;
+    }
+    this.capacityWakeInFlight = true;
+    try {
+      return await runCapacityWakePass(
+        {
+          store: this.taskStore,
+          drain: () => this.drainWorkflowContinuations(),
+          /*
+           * FNXC:WorkflowLifecycleColumns 2026-11-06-06:07:
+           * The same production terminal resolver the continuation drain uses — the
+           * legacy pair only when lifecycle resolution fails, so renamed boards are
+           * honored identically on both surfaces.
+           */
+          resolveTerminalColumns: async (taskId) => {
+            const lifecycle = await resolveTaskLifecycleColumns(this.taskStore, taskId);
+            return new Set([
+              lifecycle?.complete ?? "done",
+              lifecycle?.archived ?? "archived",
+              "done",
+              "archived",
+            ]);
+          },
+          isTaskLive: (taskId) => isTaskPlanningOrExecutionLive(taskId),
+          warn: (message) => runtimeLog.warn(message),
+        },
+        opts,
+      );
+    } catch (error) {
+      runtimeLog.warn(
+        `capacity wake pass failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return 0;
+    } finally {
+      this.capacityWakeInFlight = false;
+      if (this.capacityWakePending) {
+        this.capacityWakePending = false;
+        this.requestCapacityWake();
+      }
+    }
+  }
+
+  /**
+   * FNXC:PlanReviewCapacityWake 2026-11-06-06:07:
+   * Fire-and-forget wake for the synchronous release-event callbacks. Error-contained:
+   * a wake failure must never break the finishing run, the settled dispatch, or the
+   * planning-slot release it was triggered from.
+   */
+  private requestCapacityWake(): void {
+    void this.wakeCapacitySuspendedContinuations().catch((error) => {
+      runtimeLog.warn(
+        `capacity wake failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    });
+  }
+
   /**
    * FNXC:WorkflowScheduling 2026-07-21-12:20:
    * A single runtime drain owns selection at a time. Concurrent wakeups collapse
@@ -3002,6 +3238,15 @@ export class InProcessRuntime
         projectId: this.taskStore.getRootDir(),
         execute: (task) => this.executor.execute(task),
         kick: () => this.kickWorkflowContinuationProcessor(),
+        /*
+         * FNXC:PlanReviewCapacityWake 2026-11-06-06:07:
+         * A continuation-dispatched graph run holds no pre-held executor slot, so its
+         * completion never reaches the executor's own release hook — this settle-side
+         * release event covers it.
+         */
+        onSlotReleased: () => {
+          this.requestCapacityWake();
+        },
         onError: (_task, item, error) => {
           runtimeLog.error(`Workflow continuation ${item.id} failed:`, error);
         },

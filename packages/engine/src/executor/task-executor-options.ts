@@ -44,6 +44,16 @@ export interface TaskExecutorOptions {
    */
   getLocalNodeId?: () => string | undefined;
   semaphore?: AgentSemaphore;
+  /*
+   * FNXC:PlanReviewCapacityWake 2026-11-06-06:07 (KB-009 / FIX-12, SUBC-016):
+   * Fired by execute()'s finally ONLY when `dropPreHeldExecutorSlot(task.id)` returned
+   * true — i.e. THIS run actually released a scheduler-registered top-level agent
+   * slot. The runtime wires it to the capacity-suspended-continuation wake so a card
+   * parked at a column boundary by capacity resumes the moment a slot frees, instead
+   * of waiting for the ~10-minute self-healing reclaim sweep while fresher intake
+   * claims every freed slot. Error-contained at the call site; advisory only.
+   */
+  onExecutionSlotReleased?: () => void;
   /**
    * FNXC:ProviderRateLimitIsolation 2026-07-21-18:00:
    * Parks only tasks routed through the provider whose API limit was detected.

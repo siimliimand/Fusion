@@ -516,6 +516,14 @@ export const DEFAULT_PROJECT_SETTINGS = {
   concurrent agents to share one checkout.
   */
   worktreeLimitEnabled: true,
+  /*
+  FNXC:PlanReviewCapacityWake 2026-11-06-06:07:
+  A plan-review continuation suspended on capacity is priority-admitted over fresh
+  intake once it has waited this long (see the ProjectSettings field for the SUBC-016
+  motivation). 30 minutes keeps the priority for genuinely starved rows without
+  letting a briefly-suspended card jump ahead of fresh work during a normal burst.
+  */
+  planReviewCapacityWakeAgeMinutes: 30,
   pollIntervalMs: 15000,
   heartbeatMultiplier: 1,
   autoClaimCandidatesInPrompt: 5,

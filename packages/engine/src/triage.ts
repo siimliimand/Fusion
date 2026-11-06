@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as fusionCore from "@fusion/core";
+import { CAPACITY_WAKE_SCAN_LIMIT, inspectOldestSuspendedCapacityContinuation } from "./workflows/capacity-wake.js";
 import type {
   TaskStore,
   Task,
@@ -403,6 +404,17 @@ export interface TriageProcessorOptions {
   onSpecifyError?: (task: Task, error: Error) => void;
   /** Advisory execution-lane nudge after an admitted planning promise returns its slot. */
   onPlanningSlotReleased?: () => void;
+  /*
+   * FNXC:PlanReviewCapacityWake 2026-11-06-06:07 (KB-009 / FIX-12, SUBC-016):
+   * Optional poll-boundary wake: when planning has room (maxToStart > 0), the poll
+   * awaits ONE capacity-wake attempt with the resolved age threshold so a plan-review
+   * continuation suspended ≥ `planReviewCapacityWakeAgeMinutes` is admitted BEFORE
+   * the intake loop hands the same freed slot to fresh parses. The runtime wires
+   * this to `InProcessRuntime.wakeCapacitySuspendedContinuations`; every admission
+   * gate still applies — this only changes trigger timing. A wake failure must never
+   * break the poll (call site contains it).
+   */
+  wakeSuspendedCapacityContinuations?: (opts: { ageThresholdMs: number }) => Promise<number>;
   onAgentText?: (taskId: string, delta: string) => void;
   /** AgentStore for resolving per-agent custom instructions. */
   agentStore?: import("@fusion/core").AgentStore;
@@ -2464,6 +2476,22 @@ export class TriageProcessor {
       const triageTasks = await this.discoverReadyPlanningTasks(allTasks, now);
 
       /*
+      FNXC:PlanReviewCapacityWake 2026-11-06-06:07 (KB-009 / FIX-12, SUBC-016):
+      THE ZERO-CLAIM PROPERTY THIS ARITHMETIC PRODUCES. A plan-review continuation
+      suspended on capacity writes a durable work-item row (`state:"held"`,
+      `waitReason:"capacity"`) and leaves the TASK itself with `status: null` in a
+      hold-lane column, so `isRunningAgentTask` is false for it here — a suspended
+      card counts ZERO toward `claimed`. That is deliberate: the suspension exists so
+      the card releases its slot. But it is also why the card's RESUME was
+      trigger-starved: the reclaim sweep re-arms it on the ~10-minute cadence while
+      this poll re-admits fresh intake every ~15s, so every freed slot went to a
+      newer card (SUBC-016: 239-240 re-seeds over ~33h with zero cards entering
+      development). Wake-on-release and the poll-boundary age priority below change
+      ONLY trigger timing — this arithmetic, the cap, and the claim model are
+      untouched, and every resume still passes the same admission gates.
+      */
+
+      /*
       FNXC:ConcurrencyAdmission 2026-08-03-12:00:
       FN-8453 removed the separate maxTriageConcurrent pool, and the capacity simplification deleted the orphaned setting it left behind. Planning uses the
       same maxConcurrent live-agent claim as execute/review so a project cannot
@@ -2530,6 +2558,27 @@ export class TriageProcessor {
           claimed,
           holderTaskIds: await persistedTopLevelAgentTaskIdsFromStore(this.store, allTasks),
         });
+        /*
+        FNXC:PlanReviewCapacityWake 2026-11-06-06:07 (KB-009 / FIX-12, SUBC-016):
+        Surface how long the oldest capacity-suspended review continuation has waited.
+        When capacity is the reason nothing can start, the most operator-relevant fact
+        is how long a runnable card has already been parked — SUBC-016 was
+        unanswerable for 33h because no audit row carried its staleness. Read-only
+        inspection over the bounded held scan; ids/counts only, and the dedupe
+        signature deliberately stays UNCHANGED (staleness jitters every poll, so
+        including it would spam a sustained stall into one row per poll).
+        */
+        let suspendedInspection: { count: number; oldestWaitMs: number | null } = { count: 0, oldestWaitMs: null };
+        try {
+          const heldRows = typeof this.store.listDueWorkflowWorkItems === "function"
+            ? await this.store.listDueWorkflowWorkItems({ kinds: ["task"], states: ["held"], limit: CAPACITY_WAKE_SCAN_LIMIT })
+            : [];
+          suspendedInspection = inspectOldestSuspendedCapacityContinuation(heldRows, Date.now());
+        } catch (inspectionError) {
+          planLog.warn(
+            `suspended-capacity inspection failed: ${inspectionError instanceof Error ? inspectionError.message : String(inspectionError)}`,
+          );
+        }
         planLog.log(
           `Plan throttled by ${blockedBy}: eligible=${triageTasks.length} [${eligibleIds.join(", ")}], ` +
           `maxConcurrent=${maxConcurrent}, claimed=${claimed}, processing=${this.processing.size}` +
@@ -2608,6 +2657,11 @@ export class TriageProcessor {
               eligibleTaskIds: eligibleIds,
               processingCount: this.processing.size,
               processingTaskIds: processingIds,
+              // FNXC:PlanReviewCapacityWake 2026-11-06-06:07: staleness of the
+              // oldest capacity-suspended continuation (ids/counts only; null/0
+              // when no row is suspended).
+              oldestSuspendedReviewMs: suspendedInspection.oldestWaitMs,
+              suspendedReviewCount: suspendedInspection.count,
             },
           })
             .then((result: unknown) => {
@@ -2640,6 +2694,30 @@ export class TriageProcessor {
       } else {
         // Capacity is available again — the next distinct stall must re-announce itself.
         this.lastPlanThrottleSignature = null;
+      }
+
+      /*
+      FNXC:PlanReviewCapacityWake 2026-11-06-06:07 (KB-009 / FIX-12, SUBC-016):
+      Poll-boundary age priority. With room to start, wake the capacity-suspended
+      continuations (the wake applies the resolved age threshold — only rows
+      suspended ≥ planReviewCapacityWakeAgeMinutes qualify here) BEFORE the intake
+      loop below. Because the wake awaits a drain pass, the aged continuation's
+      admission attempt (through the real coordinator, lane "execute" vs intake's
+      "planning") completes before fresh parses are admitted — that IS the "admitted
+      before fresh intake in the same poll" guarantee. Failure-contained: a wake
+      error must never break the poll; the next poll and the reclaim sweep remain
+      the safety nets.
+      */
+      if (maxToStart > 0) {
+        try {
+          await this.options.wakeSuspendedCapacityContinuations?.({
+            ageThresholdMs: fusionCore.resolvePlanReviewCapacityWakeAgeMs(settings),
+          });
+        } catch (wakeError) {
+          planLog.warn(
+            `capacity wake at poll boundary failed: ${wakeError instanceof Error ? wakeError.message : String(wakeError)}`,
+          );
+        }
       }
 
       // Keep handoff reservations visible even when a test/runtime wrapper delays

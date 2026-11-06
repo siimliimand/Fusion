@@ -1263,6 +1263,23 @@ export interface ProjectSettings {
    * FN-8600. Turning this off does not grant shared-checkout concurrency.
    */
   worktreeLimitEnabled?: boolean;
+  /*
+   * FNXC:PlanReviewCapacityWake 2026-11-06-06:07:
+   * How long a plan-review continuation suspended on capacity (a held workflow
+   * work item with waitReason "capacity") must wait before the triage planning
+   * poll admits it AHEAD of fresh intake cards, rather than letting newer cards
+   * claim every freed slot first (SUBC-016: one card re-seeded 239 times over
+   * ~33h because each freed slot was claimed by fresher intake before the
+   * suspended row's next resume attempt).
+   *
+   * Scope: this gates ONLY the poll-boundary age priority. Wake-on-release
+   * (resume attempts fired when an agent slot frees) has no age gate at all.
+   * Unit: minutes. Default 30. Zero disables the age gate (a suspended row is
+   * priority-admitted immediately); negative/non-finite values fall back to the
+   * default. Purely a trigger-timing knob — it never changes capacity
+   * arithmetic, and admission still passes every existing gate.
+   */
+  planReviewCapacityWakeAgeMinutes?: number;
   pollIntervalMs: number;
   /** Global multiplier applied to all agent heartbeat intervals.
    *  For example, 0.5 halves the interval (faster checks), 2.0 doubles it (slower checks).

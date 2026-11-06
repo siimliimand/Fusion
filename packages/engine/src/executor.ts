@@ -7,5 +7,5 @@ export class TaskExecutor extends TaskExecutorGraphFacades {
   constructor(store: TaskStore, rootDir: string, options: TaskExecutorOptions = {}) { super(); this.store = store; this.rootDir = rootDir; this.options = options; wireTaskExecutorLifecycle(this); }
   setMergeRequester(requestMerge: (taskId: string, options?: { signal?: AbortSignal; graphOwnedPostMergeTraversal?: boolean }) => Promise<MergeResult>): void { this.mergeRequester = requestMerge; }
   setFailedNoVerdictPreMergeReviewRerouter(reroute: (task: Task) => Promise<"rerouted" | "pending" | "changed" | "unavailable" | "not-applicable">): void { this.rerouteFailedNoVerdictPreMergeReview = reroute; }
-  async execute(task: Task): Promise<void> { try { await this.executeCore(task); } finally { if (dropPreHeldExecutorSlot(task.id)) this.options.semaphore?.release(); } }
+  async execute(task: Task): Promise<void> { try { await this.executeCore(task); } finally { if (dropPreHeldExecutorSlot(task.id)) { this.options.semaphore?.release(); /* FNXC:PlanReviewCapacityWake 2026-11-06-06:07: a top-level slot was ACTUALLY released (the drop guard returned true) — fire the release wake error-contained; a wake failure must never fail the finishing run. */ try { this.options.onExecutionSlotReleased?.(); } catch { /* contained */ } } } }
 }
