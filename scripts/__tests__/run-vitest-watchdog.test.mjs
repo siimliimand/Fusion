@@ -207,11 +207,27 @@ test("runWithWatchdog: timeout fires SIGTERM then SIGKILL and returns 124", asyn
       if (sig === "SIGKILL") setTimeout(() => child.emit("close", null, "SIGKILL"), 1);
     },
   });
-  const result = await p;
-  assert.equal(result.timedOut, true);
-  assert.equal(result.code, TIMEOUT_EXIT_CODE);
-  assert.deepEqual(killed, ["SIGTERM", "SIGKILL"]);
-  assert.match(diagnosticsLogged, /HANG: hanger/);
+  /*
+  FNXC:VitestWatchdogTests 2026-11-06-12:48:
+  The watchdog deliberately unrefs its own timers so a hung invocation can never
+  keep an idle wrapper process alive (FN-9349-era behavior, unchanged by KB-022).
+  A production child holds the wrapper's event loop via its real stdio pipes, but
+  a fake test child owns no handles, so awaiting the real 30ms budget timer with
+  nothing ref'd drains the loop and node:test cancels the pending test (and every
+  test queued after it) with ERR_TEST_FAILURE "Promise resolution is still pending".
+  This keep-alive interval restores the production handle topology for the fake
+  child only — no timer, assertion, or lib behavior is changed.
+  */
+  const keepAlive = setInterval(() => {}, 10);
+  try {
+    const result = await p;
+    assert.equal(result.timedOut, true);
+    assert.equal(result.code, TIMEOUT_EXIT_CODE);
+    assert.deepEqual(killed, ["SIGTERM", "SIGKILL"]);
+    assert.match(diagnosticsLogged, /HANG: hanger/);
+  } finally {
+    clearInterval(keepAlive);
+  }
 });
 
 test("runWithWatchdog: child error rejects", async () => {
