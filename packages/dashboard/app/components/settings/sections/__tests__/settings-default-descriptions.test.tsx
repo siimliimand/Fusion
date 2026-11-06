@@ -671,6 +671,21 @@ const NOT_SURFACED_ALLOWLIST: Record<string, string> = {
   prerebaseHotFiles: "internal pre-rebase tuning constant, no UI field",
   prerebaseDivergenceThreshold: "internal pre-rebase tuning constant, no UI field",
   /*
+   * FNXC:PlanReviewCapacityWake 2026-11-06-13:29:
+   * KB-009 (commit 73f5d603d) added planReviewCapacityWakeAgeMinutes to
+   * DEFAULT_PROJECT_SETTINGS without registering it here, breaking the census
+   * assertion below on any base carrying the landing; first observed failing as
+   * Full Suite run 42207770829 (Test shard 2/4, failedFullName "FN-7505 settings
+   * default-value description guard > every DEFAULT_SETTINGS key is either mapped
+   * to a description or explicitly allowlisted"). It is allowlisted rather than
+   * mapped because no settings/sections component renders it — like the prerebase
+   * trio above it is an internal engine planning-poll tuning constant, project
+   * scope via the settings API only (docs/settings-reference.md documents the
+   * not-surfaced contract), so a SETTING_DESCRIPTION_KEYS entry would fabricate
+   * coverage and trip the overlap assertion.
+   */
+  planReviewCapacityWakeAgeMinutes: "engine planning-poll tuning constant (KB-009 capacity-wake age gate for suspended plan-review continuations, resolved via resolvePlanReviewCapacityWakeAgeMs); not surfaced in the Settings UI, project scope via the settings API, documented in docs/settings-reference.md",
+  /*
    * FNXC:SettingsDefaults 2026-09-01-14:52:
    * Chat defaults are rendered by ProjectModelsSection's Chat group, where help is
    * attached to the shared SettingsHelpTip "?" affordance instead of a plain
@@ -796,6 +811,34 @@ describe("FN-7505 settings default-value description guard", () => {
       SETTING_DESCRIPTION_KEYS,
       "FN-8993 requires knowledgeGraphDir to stay out of SETTING_DESCRIPTION_KEYS",
     ).not.toHaveProperty("knowledgeGraphDir");
+  });
+
+  /*
+  FNXC:PlanReviewCapacityWake 2026-11-06-13:34:
+  Pins KB-009's capacity-wake age-gate classification so planReviewCapacityWakeAgeMinutes
+  cannot silently return to the unaccounted-default census failure (first observed as
+  Full Suite run 42207770829 Test shard 2/4). The engine resolves it via
+  resolvePlanReviewCapacityWakeAgeMs and no settings/sections component renders it, so it
+  must stay a DEFAULT_SETTINGS key classified in the not-surfaced allowlist and must never
+  be locale-mapped.
+  */
+  it("pins KB-009 planReviewCapacityWakeAgeMinutes as an allowlisted, non-Settings field", () => {
+    expect(
+      DEFAULT_SETTINGS,
+      "KB-009 requires planReviewCapacityWakeAgeMinutes to remain a DEFAULT_SETTINGS key",
+    ).toHaveProperty("planReviewCapacityWakeAgeMinutes");
+    expect(
+      NOT_SURFACED_ALLOWLIST.planReviewCapacityWakeAgeMinutes,
+      "KB-009 requires planReviewCapacityWakeAgeMinutes's non-empty not-surfaced allowlist reason",
+    ).toEqual(expect.any(String));
+    expect(
+      NOT_SURFACED_ALLOWLIST.planReviewCapacityWakeAgeMinutes,
+      "KB-009 requires a non-empty planReviewCapacityWakeAgeMinutes allowlist reason",
+    ).not.toBe("");
+    expect(
+      SETTING_DESCRIPTION_KEYS,
+      "KB-009 requires planReviewCapacityWakeAgeMinutes to stay out of SETTING_DESCRIPTION_KEYS",
+    ).not.toHaveProperty("planReviewCapacityWakeAgeMinutes");
   });
 
   it("pins Antigravity card-owned defaults as allowlisted rather than locale-mapped", () => {
