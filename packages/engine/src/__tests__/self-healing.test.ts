@@ -7274,16 +7274,22 @@ describe("SelfHealingManager", () => {
       vi.setSystemTime(new Date("2026-01-01T00:10:00.000Z"));
       const managerWithRecovery = new SelfHealingManager(store, { rootDir: "/tmp/test-project" });
       (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({ taskStuckTimeoutMs: 60_000, autoMerge: true });
-      (store.listTasks as ReturnType<typeof vi.fn>)
-        .mockResolvedValueOnce([
+      /*
+      KB-016: the sweep now also issues a slim capacity read each tick, so the candidate lists are
+      dispatched by read shape instead of a once-queue: candidate reads (non-slim) return the two
+      tick fixtures in order; capacity reads see an empty board (free capacity — capacity is not
+      the dimension under test here, the dedup window and code transition are).
+      */
+      const candidateReads: Array<Record<string, unknown>[]> = [
+        [
           staleMergingTask({
             log: [{
               timestamp: "2026-01-01T00:08:00.000Z",
               action: "In-review stall surfaced [transient-merge-status-no-owner]: old",
             }],
           }),
-        ])
-        .mockResolvedValueOnce([
+        ],
+        [
           staleMergingTask({
             status: undefined,
             mergeRetries: 3,
@@ -7292,7 +7298,10 @@ describe("SelfHealingManager", () => {
               action: "In-review stall surfaced [transient-merge-status-no-owner]: recent",
             }],
           }),
-        ]);
+        ],
+      ];
+      (store.listTasks as ReturnType<typeof vi.fn>).mockImplementation(async (options: { slim?: boolean } = {}) =>
+        options.slim ? [] : (candidateReads.shift() ?? []));
 
       expect(await managerWithRecovery.surfaceInReviewStalls()).toBe(1);
       expect(await managerWithRecovery.surfaceInReviewStalls()).toBe(1);
@@ -9262,6 +9271,9 @@ describe("autoMerge gating for mutating in-review sweeps (FN-5147)", () => {
         globalPause: false,
         enginePaused: false,
         taskStuckTimeoutMs: 60_000,
+        // KB-016: explicit free capacity (see the sibling override test) — the override gate is
+        // the dimension under test, not saturation.
+        maxConcurrent: 10,
       });
       (store.listTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
         {
@@ -9307,6 +9319,10 @@ describe("autoMerge gating for mutating in-review sweeps (FN-5147)", () => {
         globalPause: false,
         enginePaused: false,
         taskStuckTimeoutMs: 60_000,
+        // KB-016: explicit free capacity — this test is about the autoMerge override gate, not the
+        // capacity model (both fixtures are stale-merging cards and would otherwise compute as a
+        // saturated board under the shared triage claim computation).
+        maxConcurrent: 10,
       });
       (store.listTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
         { id: "FN-OVERRIDE", autoMerge: true, ...staleFields },

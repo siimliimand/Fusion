@@ -1465,6 +1465,7 @@ export {
   getInReviewStallReason,
   IN_REVIEW_STALL_DEADLOCK_LOG_PREFIX,
   IN_REVIEW_STALL_LOG_PREFIX,
+  IN_REVIEW_STALL_SUPPRESSED_LOG_PREFIX,
   IN_REVIEW_STALL_TERMINAL_LOG_PREFIX,
   DEFAULT_STALE_MERGING_MIN_AGE_MS,
   DEFAULT_MAX_AUTO_MERGE_RETRIES,
@@ -1479,7 +1480,7 @@ export {
   resolveReviewConvergenceEscalationTarget,
   resolveReviewArbitrationTarget,
 } from "./tasks/in-review-stall.js";
-export type { ExecutorEscalationTarget, InReviewStallSignal, InReviewStallCode, ProviderErrorClassification } from "./tasks/in-review-stall.js";
+export type { ExecutorEscalationTarget, InReviewStallSignal, InReviewStallCode, InReviewStallCapacity, ProviderErrorClassification } from "./tasks/in-review-stall.js";
 export {
   getStalePausedReviewSignal,
   DEFAULT_STALE_PAUSED_REVIEW_THRESHOLD_MS,

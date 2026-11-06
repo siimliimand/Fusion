@@ -923,6 +923,15 @@ export type DatabaseMutationType =
   | "memory:capture-failed"
   | "task:in-review-stall-deadlock-disposed"
   | "task:in-review-stall-terminal-provider-error"
+  /*
+   * FNXC:InReviewStallCapacity 2026-11-06-09:24 (KB-016 / FIX-14):
+   * Records one visible capacity-wait suppression of an in-review stall signal on a saturated
+   * board, once per written suppression log line and deduplicated with it. Metadata is strictly
+   * ids/counts-only: { taskId, code, claimed, maxConcurrent } — `code` is a fixed stall-code enum
+   * member, never reason prose. Emitted through the FN-9175 bounded seam so an absent, throwing,
+   * rejecting, or hung sink can never alter, delay, or wedge the sweep.
+   */
+  | "task:in-review-stall-capacity-suppressed"
   | "task:finalize-unproven-blocked"
   /**
    * FNXC:RunAudit 2026-08-20-02:02:

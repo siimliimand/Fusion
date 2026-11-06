@@ -33,10 +33,28 @@ export type InReviewStallCode =
 
 export type ProviderErrorClassification = "non_retryable" | "retryable" | "unknown";
 
+/**
+ * Capacity snapshot a caller supplies when it can observe board saturation.
+ * Only the engine self-healing sweep computes this today; read-layer badge
+ * hydration never knows the claimed count and omits it.
+ */
+export interface InReviewStallCapacity {
+  claimed: number;
+  maxConcurrent: number;
+}
+
 export interface InReviewStallSignal {
   reason: string;
   code: InReviewStallCode;
   observedAt: string;
+  /*
+  FNXC:InReviewStallCapacity 2026-11-06-09:20 (KB-016 / FIX-14):
+  Set ONLY when the caller supplied `context.capacity`, the board is saturated, and the code is a
+  waiting-for-a-slot code. It is absent (never false) when no capacity context is supplied, so
+  callers without the seam stay byte-identical.
+  */
+  suppressedByCapacity?: boolean;
+  capacity?: InReviewStallCapacity;
 }
 
 export interface InReviewStallContext {
@@ -58,6 +76,25 @@ export interface InReviewStallContext {
   byte-identical.
   */
   reviewColumns?: ReadonlySet<string>;
+  /*
+  FNXC:InReviewStallCapacity 2026-11-06-09:20 (KB-016 / FIX-14 — the starvation model):
+  A stall is only evidence of deadlock if the card had room to move. Under a saturated board
+  (claimed >= maxConcurrent) the two signals whose ONLY meaning is "the card wants a slot and has
+  not got one" — completed-review-status-none (review finished, merge handoff cannot claim a slot)
+  and transient-merge-status-no-owner (the merger cannot claim a slot) — are manufactured by the
+  capacity cap, not by the card. KB-007 (2026-11-06, proj_67ae5a1eb06e4218) was auto-failed as an
+  "In-review stall deadlock" on a 2/2 board and recovered instantly once an operator raised the
+  cap, proving the card was healthy.
+
+  The waiting-for-a-slot set is EXACTLY {completed-review-status-none, transient-merge-status-no-owner}.
+  merge-blocker, merge-retries-exhausted, no-worktree-no-merge-confirmed, and
+  non-retryable-provider-error are evidence of real defects and are NEVER capacity-suppressed.
+
+  Optional, with today's behaviour preserved as the fallback, so a caller that does not pass it
+  (read-layer badge hydration never knows the claimed count) is byte-identical. Only the engine
+  self-healing sweep supplies capacity.
+  */
+  capacity?: InReviewStallCapacity;
 }
 
 /** Keep aligned with engine DEFAULT_STALE_MERGING_STATUS_MIN_AGE_MS. */
@@ -160,6 +197,38 @@ export function resolveReviewArbitrationTarget(settings?: {
 export const IN_REVIEW_STALL_LOG_PREFIX = "In-review stall surfaced [";
 export const IN_REVIEW_STALL_DEADLOCK_LOG_PREFIX = "In-review stall auto-disposed [";
 export const IN_REVIEW_STALL_TERMINAL_LOG_PREFIX = "In-review stall terminal disposed [";
+/*
+FNXC:InReviewStallCapacity 2026-11-06-09:20 (KB-016): visible capacity-wait marker. Written by the
+engine sweep in place of a surfaced entry for suppressed signals so the wait is observable, not
+silent. It deliberately does NOT start with IN_REVIEW_STALL_LOG_PREFIX, so the
+`countRecentIdenticalStallEntries` scan-break contract treats it as a non-stall entry and resets
+the consecutive identical-stall run (the counter-hygiene mechanism).
+*/
+export const IN_REVIEW_STALL_SUPPRESSED_LOG_PREFIX = "In-review stall suppressed [";
+
+/*
+FNXC:InReviewStallCapacity 2026-11-06-09:20 (KB-016): the waiting-for-a-slot code set. Every other
+stall code is evidence of a real defect (failed gate, exhausted retries, missing worktree, terminal
+provider error) and stays surfaceable — and disposable — regardless of board saturation.
+*/
+const CAPACITY_WAIT_STALL_CODES: ReadonlySet<InReviewStallCode> = new Set([
+  "completed-review-status-none",
+  "transient-merge-status-no-owner",
+]);
+
+function applyCapacitySuppression(
+  signal: InReviewStallSignal,
+  context: InReviewStallContext,
+): InReviewStallSignal {
+  const capacity = context.capacity;
+  if (!capacity || !CAPACITY_WAIT_STALL_CODES.has(signal.code)) return signal;
+  if (!(capacity.claimed >= capacity.maxConcurrent)) return signal;
+  return {
+    ...signal,
+    suppressedByCapacity: true,
+    capacity: { claimed: capacity.claimed, maxConcurrent: capacity.maxConcurrent },
+  };
+}
 
 const TRANSIENT_MERGE_STATUSES = new Set(["merging", "merging-pr", "merging-fix"]);
 const FAILED_TASK_MERGE_BLOCKER_PREFIX = "task is marked 'failed':";
@@ -269,11 +338,14 @@ export function getInReviewStallReason(
       : Number.NaN;
     if (Number.isFinite(effectiveUpdatedAtMs) && Math.max(0, now - effectiveUpdatedAtMs) >= staleMergingMinAgeMs) {
       const minutes = Math.max(1, Math.floor(staleMergingMinAgeMs / 60_000));
-      return {
-        code: "transient-merge-status-no-owner",
-        reason: `In transient '${task.status}' state with no active merger for >= ${minutes} min`,
-        observedAt,
-      };
+      return applyCapacitySuppression(
+        {
+          code: "transient-merge-status-no-owner",
+          reason: `In transient '${task.status}' state with no active merger for >= ${minutes} min`,
+          observedAt,
+        },
+        context,
+      );
     }
   }
 
@@ -306,11 +378,20 @@ export function getInReviewStallReason(
     && Math.max(0, now - updatedAtMs) >= staleMergingMinAgeMs
   ) {
     const minutes = Math.max(1, Math.floor(staleMergingMinAgeMs / 60_000));
-    return {
-      code: "completed-review-status-none",
-      reason: `Completed review task has no merge owner or status for >= ${minutes} min`,
-      observedAt,
-    };
+    /*
+    FNXC:InReviewStallCapacity 2026-11-06-09:20 (KB-016): the KB-007 shape. On a saturated board
+    this signal's only content is "the merge handoff cannot claim a slot" — the sweep marks it
+    capacity-suppressed instead of counting it toward the 3-identical-stall deadlock disposal,
+    and re-drives the handoff itself once capacity frees.
+    */
+    return applyCapacitySuppression(
+      {
+        code: "completed-review-status-none",
+        reason: `Completed review task has no merge owner or status for >= ${minutes} min`,
+        observedAt,
+      },
+      context,
+    );
   }
 
   if (!task.worktree && task.mergeDetails?.noOpMerge !== true) {

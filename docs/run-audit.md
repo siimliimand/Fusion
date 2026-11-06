@@ -65,6 +65,7 @@ Reconciliation-scoped auto-recover/reclaim events the self-healing sweep surface
 | `task:reconcile-wedged-active-merge` | Self-healing reclaims a wedged single-flight merge entry. |
 | `task:reconcile-stranded-completed-no-action` | A stranded-completed promoter withholds promotion of an all-steps-done/skipped task with a failure-park provenance (no-action). |
 | `task:reconcile-legacy-adoption` | Self-healing startup adopts a pre-cutover legacy task row through the KTD-8 adoption table. |
+| `task:in-review-stall-capacity-suppressed` | The in-review stall sweep suppresses a waiting-for-a-slot stall signal (`completed-review-status-none` / `transient-merge-status-no-owner`) on a saturated board (`claimed >= maxConcurrent`) instead of counting it toward disposal; written once per deduplicated `In-review stall suppressed [capacity]` log line (KB-016). Metadata: `{taskId, code, claimed, maxConcurrent}` — ids/counts only, emitted through the FN-9175 bounded seam, deduplicated with the suppression log line. |
 
 ## Durable-agent error-state
 

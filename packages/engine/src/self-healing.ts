@@ -30,7 +30,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmdirSy
 import { readFile } from "node:fs/promises";
 import { tmpdir, hostname } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { PRE_MERGE_STEPS_NOT_RUN_BLOCKER, loadWorkspaceConfig, type TaskMoveLanes, resolveColumnFlags, IN_REVIEW_STALL_DEADLOCK_LOG_PREFIX, IN_REVIEW_STALL_LOG_PREFIX, IN_REVIEW_STALL_TERMINAL_LOG_PREFIX, allowsAutoMergeProcessing, hasSharedBranchMemberAutoMergeHold, hasUserAutoMergeHold, resolveEffectiveAutoMerge, countRecentIdenticalStallEntries, detectDependencyCycle, detectSelfDefeatingDependency, evaluateNoCommitsNoOpFinalize, evaluateCompletedPromotionFailureProvenance, evaluateSkipBypassTaint, getInReviewStalledSignal, getInReviewStallReason, getPrimaryPrInfo, getStalePausedReviewSignal, getStalePausedTodoSignal, getTaskHardMergeBlocker, getMergeConfirmedFinalizationBlocker, getPostMergeFinalizeBlocker, getRequiredPostMergeEvidenceBlocker, getRequiredPostMergeEvidenceDecision, planConfirmedMergeChecklistReconciliation, getTaskMergeBlocker, isStaleContentApprovalBlocker, resolvePreMergeGateForTask, isEphemeralAgent, isMergeRequestContractShadowEnabled, isWorkspaceTask, isSharedBranchGroupMemberIntegration, isLiveSharedBranchGroupMemberIntegration, isNearDuplicateCanonicalInactive, resolveExplicitDuplicateMarker, flagTriageDuplicate, isTriageDuplicateKeepAcknowledged, resolveMaxAutoMergeRetries, resolveOptionalStepRevisionBudget, resolveOptionalReviewRevisionBudget, getBuiltinWorkflow, isBuiltinWorkflowId, resolveWorkflowIrForTask, resolveWorkflowIrForTaskWithProvenance, resolveRequiredPreMergeStepIds, resolveReboundTarget, columnsWithFlag, resolveLifecycleColumns, resolveTaskLifecycleColumns, isWipColumnRole, isReviewColumnRole, isTerminalColumnRole, workflowHasColumn, planLegacyAdoption, resolveOrphanedPendingStepResults, resolveUnprovenReviewApproval, classifyReviewLease, PLAN_REVIEW_LEASE_STALENESS_MS, DEFAULT_MAX_POST_REVIEW_FIXES, ACTIVE_WORKFLOW_WORK_ITEM_STATES, AWAITING_APPROVAL_PAUSE_REASON, type Agent, type AgentStore, type ChatStore, type MessageStore, type TaskStore, type MoveTaskOptions, type Settings, type Task, type MergeDetails, type TaskPriority, type MergeResult, type WorkflowStepResult, type WorkflowIr, type WorkflowIrV2,
+import { PRE_MERGE_STEPS_NOT_RUN_BLOCKER, loadWorkspaceConfig, type TaskMoveLanes, resolveColumnFlags, IN_REVIEW_STALL_DEADLOCK_LOG_PREFIX, IN_REVIEW_STALL_LOG_PREFIX, IN_REVIEW_STALL_SUPPRESSED_LOG_PREFIX, IN_REVIEW_STALL_TERMINAL_LOG_PREFIX, allowsAutoMergeProcessing, hasSharedBranchMemberAutoMergeHold, hasUserAutoMergeHold, resolveEffectiveAutoMerge, countRecentIdenticalStallEntries, detectDependencyCycle, detectSelfDefeatingDependency, evaluateNoCommitsNoOpFinalize, evaluateCompletedPromotionFailureProvenance, evaluateSkipBypassTaint, getInReviewStalledSignal, getInReviewStallReason, getPrimaryPrInfo, getStalePausedReviewSignal, getStalePausedTodoSignal, getTaskHardMergeBlocker, getMergeConfirmedFinalizationBlocker, getPostMergeFinalizeBlocker, getRequiredPostMergeEvidenceBlocker, getRequiredPostMergeEvidenceDecision, planConfirmedMergeChecklistReconciliation, getTaskMergeBlocker, isStaleContentApprovalBlocker, resolvePreMergeGateForTask, isEphemeralAgent, isMergeRequestContractShadowEnabled, isWorkspaceTask, isSharedBranchGroupMemberIntegration, isLiveSharedBranchGroupMemberIntegration, isNearDuplicateCanonicalInactive, resolveExplicitDuplicateMarker, flagTriageDuplicate, isTriageDuplicateKeepAcknowledged, resolveMaxAutoMergeRetries, resolveMaxConcurrentSetting, resolveOptionalStepRevisionBudget, resolveOptionalReviewRevisionBudget, getBuiltinWorkflow, isBuiltinWorkflowId, resolveWorkflowIrForTask, resolveWorkflowIrForTaskWithProvenance, resolveRequiredPreMergeStepIds, resolveReboundTarget, columnsWithFlag, resolveLifecycleColumns, resolveTaskLifecycleColumns, isWipColumnRole, isReviewColumnRole, isTerminalColumnRole, workflowHasColumn, planLegacyAdoption, resolveOrphanedPendingStepResults, resolveUnprovenReviewApproval, classifyReviewLease, PLAN_REVIEW_LEASE_STALENESS_MS, DEFAULT_MAX_POST_REVIEW_FIXES, ACTIVE_WORKFLOW_WORK_ITEM_STATES, AWAITING_APPROVAL_PAUSE_REASON, type Agent, type AgentStore, type ChatStore, type MessageStore, type TaskStore, type MoveTaskOptions, type Settings, type Task, type MergeDetails, type TaskPriority, type MergeResult, type WorkflowStepResult, type WorkflowIr, type WorkflowIrV2, type InReviewStallCapacity,
 
   resolveNearDuplicateCanonicalFlags,
   LEGACY_COLUMN_IDS_BY_ROLE,
@@ -58,6 +58,7 @@ import { PRE_MERGE_STEPS_NOT_RUN_BLOCKER, loadWorkspaceConfig, type TaskMoveLane
 import { deriveStaleReviewCallbackAttemptId, finalizePlanningSegment, isLegacyWorkspaceWorktreeLayout, resolveWorkspaceTaskWorktreeDir } from "@fusion/core";
 import type { WorkspaceLandIntent, WorkflowWorkItem } from "@fusion/core";
 import { classifyStaleContentPark } from "./merge/stale-content-park.js";
+import { computeTopLevelConcurrencyClaimedFromStore } from "./concurrency/concurrency.js";
 import type { MeshLeaseManager } from "./project/mesh-lease-manager.js";
 import { createLogger, schedulerLog } from "./logger.js";
 import { registerLifecycleMoveLog } from "./execution/lifecycle-move-log.js";
@@ -274,6 +275,17 @@ import {
 
 
 const log = createLogger("self-healing");
+
+/*
+FNXC:InReviewStallCapacity 2026-11-06-09:30 (KB-016 / FIX-14):
+Operator-visible marker written when the in-review stall sweep re-drives a completed review's
+merge handoff under FREE capacity (the recoverCompletionHandoffLimbo primitive). Like the
+capacity-suppression marker, it is a NON-surfaced entry: `countRecentIdenticalStallEntries`'
+scan-break contract treats it as a cause change and resets the identical-stall run, and the
+surfaced-dedup backward find (which filters on "In-review stall surfaced [") never mistakes it
+for a surfaced stall.
+*/
+const IN_REVIEW_MERGE_HANDOFF_REDRIVEN_LOG_PREFIX = "Merge handoff re-driven [in-review stall]:";
 
 /*
 DELIBERATE-LITERAL — the no-metadata fallback for dependency satisfaction, mirroring
@@ -532,6 +544,15 @@ export interface SelfHealingOptions {
    */
   enqueueMerge?: (taskId: string) => boolean;
   requeueForAutoMerge?: (taskId: string) => boolean | void | Promise<boolean | void>;
+  /*
+  FNXC:InReviewStallCapacity 2026-11-06-09:24 (KB-016 / FIX-14):
+  Test/injection seam for the in-review stall sweep's capacity view: `claimed` live top-level agent
+  slots vs the project cap. Production needs no new wiring — the sweep computes the snapshot from
+  the store with the exact primitives triage admission uses when the seam is absent. Returning
+  null/undefined (or throwing) means "capacity unknown": the tick fail-opens and suppresses NO
+  signal, preserving every pre-KB-016 surfacing/disposal behavior.
+  */
+  getConcurrencyCapacity?: () => InReviewStallCapacity | null | undefined | Promise<InReviewStallCapacity | null | undefined>;
   isTaskActive?: (taskId: string) => boolean;
   clearMergeActive?: (taskId: string) => void;
   /**
@@ -11135,6 +11156,46 @@ export class SelfHealingManager extends SelfHealingGitEvidence {
       }
       let surfaced = 0;
 
+      /*
+      FNXC:InReviewStallCapacity 2026-11-06-09:24 (KB-016 / FIX-14 — the sweep side of the seam):
+      A stall is only evidence of deadlock if the card had room to move. Resolve the project's
+      capacity ONCE per tick so every card is judged against the same snapshot, reusing the exact
+      claim primitive triage admission uses (`computeTopLevelConcurrencyClaimedFromStore`) and the
+      same cap resolver (`resolveMaxConcurrentSetting`) with triage's own read shape
+      (`listTasks({ slim: true, includeArchived: false })`).
+
+      Fail OPEN: if the computation throws, capacity is unknown and NO signal is suppressed this
+      tick — the pre-KB-016 surfacing/disposal behavior is fully preserved. The fence points this
+      direction deliberately: a wrong suppression would strand a genuinely deadlocked card forever,
+      while a missed suppression only produces the old (bounded, observable) stall surface.
+
+      `pendingSpecifyCount` is deliberately omitted: self-healing cannot see triage's in-flight
+      specify set, so the claimed count can only UNDER-count, and under-counting fails toward
+      surfacing/disposal (the fence-preserving direction), never toward suppression. The options
+      seam (`getConcurrencyCapacity`) exists for tests/injection only; production wiring is
+      intentionally absent.
+      */
+      let stallCapacity: InReviewStallCapacity | null | undefined;
+      if (this.options.getConcurrencyCapacity) {
+        try {
+          stallCapacity = await this.options.getConcurrencyCapacity();
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          log.warn(`In-review stall capacity seam failed; suppressing no signals this tick: ${errorMessage}`);
+          stallCapacity = null;
+        }
+      } else {
+        try {
+          const capacityTasks = await this.store.listTasks({ slim: true, includeArchived: false });
+          const claimed = await computeTopLevelConcurrencyClaimedFromStore({ store: this.store, tasks: capacityTasks });
+          stallCapacity = { claimed, maxConcurrent: resolveMaxConcurrentSetting(settings) };
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          log.warn(`In-review stall capacity computation failed; suppressing no signals this tick: ${errorMessage}`);
+          stallCapacity = null;
+        }
+      }
+
       for (const task of tasks) {
         if (task.deletedAt) continue;
         if (!allowsAutoMergeProcessing(task, settings)) continue;
@@ -11155,6 +11216,7 @@ export class SelfHealingManager extends SelfHealingGitEvidence {
           maxAutoMergeRetries,
           engineActiveSinceMs: settings.engineActiveSinceMs,
           engineActivationGraceMs: settings.engineActivationGraceMs,
+          capacity: stallCapacity ?? undefined,
         });
         if (!signal) continue;
         if (await this.isMergeLaneOwned(task.id)) continue;
@@ -11200,6 +11262,112 @@ export class SelfHealingManager extends SelfHealingGitEvidence {
           const previousAt = Date.parse(previous.timestamp);
           if (Number.isFinite(previousAt) && previousAt >= cycleStartMs - timeoutMs && previousCode === signal.code) {
             continue;
+          }
+        }
+
+        /*
+        FNXC:InReviewStallCapacity 2026-11-06-09:24 (KB-016 / FIX-14 — suppression, not disposal):
+        A capacity-suppressed signal is a WAIT, not a stall: no surfaced entry, no disposal counter,
+        no disposal. The wait is VISIBLE — one deduplicated `In-review stall suppressed [capacity]`
+        log line per continuous capacity-wait episode — and bounded: the marker is rewritten only
+        after OTHER log activity intervenes (a surfaced entry, a recovery, an operator note), so a
+        long saturation writes one line, not one per tick. This dedup sits deliberately OUTSIDE the
+        surfaced-dedup window above: the Symptom-Verification reproduction (three sweep ticks spaced
+        >= taskStuckTimeoutMs apart) requires exactly ONE suppression line, which a timeoutMs window
+        cannot deliver — an episode-scoped marker is the contract that holds. The marker is also a
+        non-surfaced entry, so `countRecentIdenticalStallEntries`' scan-break contract resets the
+        identical-stall run (counter hygiene); and once capacity frees, the re-drive branch below
+        hands the card its chance to advance before any disposal is even countable.
+        Merge-blocker, merge-retries-exhausted, no-worktree-no-merge-confirmed, and
+        non-retryable-provider-error signals are NEVER capacity-suppressed: they are evidence of
+        real defects (the classifier marks only the two waiting-for-a-slot codes).
+        */
+        if (signal.suppressedByCapacity === true && stallCapacity) {
+          const logEntries = task.log ?? [];
+          const lastEntry = logEntries[logEntries.length - 1];
+          if (lastEntry?.action.startsWith(IN_REVIEW_STALL_SUPPRESSED_LOG_PREFIX)) continue;
+          await this.store.logEntry(
+            task.id,
+            `${IN_REVIEW_STALL_SUPPRESSED_LOG_PREFIX}capacity]: claimed=${stallCapacity.claimed}/max=${stallCapacity.maxConcurrent}`,
+          );
+          /* FNXC:InReviewStallCapacity 2026-11-06-09:24 — ids/counts-only metadata, FN-9175 bounded seam, emitted once per written suppression line. */
+          await emitBoundedRunAudit(this.store, {
+            mutationType: "task:in-review-stall-capacity-suppressed",
+            target: task.id,
+            taskId: task.id,
+            agentId: "self-healing",
+            runId: generateSyntheticRunId("self-healing-stall-capacity-suppressed", task.id),
+            domain: "database",
+            metadata: {
+              taskId: task.id,
+              code: signal.code,
+              claimed: stallCapacity.claimed,
+              maxConcurrent: stallCapacity.maxConcurrent,
+            },
+          });
+          continue;
+        }
+
+        /*
+        FNXC:InReviewStallCapacity 2026-11-06-09:30 (KB-016 / FIX-14 — re-drive before disposal):
+        With capacity FREE, a completed review with no merge owner gets its merge handoff re-driven
+        (`enqueueMergeQueue` + `requeueForAutoMerge`, the exact primitive
+        `recoverCompletionHandoffLimbo` uses) BEFORE any disposal is countable — the card was just
+        given its chance to advance, so this tick neither surfaces nor counts. The re-drive is
+        deliberately ONCE per card (marker-scan latch, no time window): a recurring re-drive every
+        sweep window would mask a genuine deadlock forever, while a single re-drive keeps the
+        3-identical-stall disposal fence intact for a card that still fails to advance with room
+        to move. Log-only by design — no new audit event: the enqueue/requeue primitive already
+        leaves its own durable trace, and this marker line itself is the operator-visible record
+        that resets the stall counter. UNREACHABLE for allowsAutoMergeProcessing === false,
+        hasUserAutoMergeHold, user-paused, merge-lane-owned, deleted, and fresh-row cards because
+        the loop guards above run first — deliberately not re-checked here.
+        Only `completed-review-status-none` qualifies: a `transient-merge-status-no-owner` card
+        already HAS a merge handoff in flight shape, and defect-evidence codes are never re-driven.
+        Acceptance contract: the requeue callback's explicit `false` (production wiring returns
+        the merge enqueuer's boolean) means the handoff was REJECTED — the card did not advance,
+        so no marker is written and the tick falls through to surfacing (FN-6070). Void/undefined
+        returns (callbacks that do not report acceptance, including bare test fakes) count as
+        accepted.
+        */
+        if (
+          signal.suppressedByCapacity !== true
+          && signal.code === "completed-review-status-none"
+          && stallCapacity
+          && stallCapacity.claimed < stallCapacity.maxConcurrent
+        ) {
+          const alreadyRedriven = (task.log ?? []).some((entry) => entry.action.startsWith(IN_REVIEW_MERGE_HANDOFF_REDRIVEN_LOG_PREFIX));
+          const requeueForAutoMerge = this.options.requeueForAutoMerge ?? this.options.enqueueMerge;
+          if (!alreadyRedriven && requeueForAutoMerge) {
+            let enqueued = false;
+            try {
+              // FN-5353: strict targetTaskId leasing in reuse handoff requires an explicit queue
+              // row before re-emitting auto-merge (same contract as recoverCompletionHandoffLimbo).
+              await this.store.enqueueMergeQueue(task.id);
+              enqueued = true;
+            } catch (err) {
+              const errorMessage = err instanceof Error ? err.message : String(err);
+              log.warn(`surfaceInReviewStalls: merge handoff re-drive enqueue failed for ${task.id}: ${errorMessage}`);
+            }
+            if (enqueued) {
+              const accepted = await requeueForAutoMerge(task.id);
+              if (accepted === false) {
+                /*
+                FNXC:InReviewStallCapacity 2026-11-06-09:33 (KB-016):
+                An explicit rejection means the handoff did NOT advance the card — the card is
+                failing to advance WITH free capacity, which is exactly the genuine-deadlock shape
+                this task reserves disposal for (FN-6070's contract: rejected limbo requeues must
+                still surface, never launder into silent waits). Fall through to normal surfacing
+                so this tick counts toward the preserved 3-identical-stall disposal.
+                */
+                log.debug(`surfaceInReviewStalls: skipped re-drive marker for ${task.id} because merge requeue was not accepted`);
+              } else {
+                await this.store.logEntry(task.id, `${IN_REVIEW_MERGE_HANDOFF_REDRIVEN_LOG_PREFIX} ${signal.reason}`);
+                continue;
+              }
+            }
+            // Enqueue threw (or the requeue callback is unwired or rejected): fall through to
+            // normal surfacing so this tick still counts toward the preserved deadlock disposal.
           }
         }
 

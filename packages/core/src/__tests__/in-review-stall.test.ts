@@ -5,6 +5,8 @@ import {
   DEFAULT_MAX_AUTO_MERGE_RETRIES,
   DEFAULT_STALE_MERGING_MIN_AGE_MS,
   getInReviewStallReason,
+  IN_REVIEW_STALL_LOG_PREFIX,
+  IN_REVIEW_STALL_SUPPRESSED_LOG_PREFIX,
 } from "../tasks/in-review-stall.js";
 
 const NOW = Date.parse("2026-05-12T12:00:00.000Z");
@@ -101,6 +103,36 @@ describe("countRecentIdenticalStallEntries", () => {
       { timestamp: "2026-05-12T11:58:00.000Z", action: `In-review stall surfaced [merge-blocker]: ${reason}` },
       { timestamp: "2026-05-12T11:59:00.000Z", action: `In-review stall surfaced [merge-blocker]: ${reason}` },
     ]), { code: "merge-blocker", reason })).toBe(2);
+  });
+
+  /*
+  KB-016 counter-hygiene pins: the capacity-suppression and merge-handoff re-drive markers are
+  NON-surfaced entries, so the scan-break contract below (unchanged by KB-016) resets the
+  consecutive identical-stall run the moment the underlying cause changes — a stale pre-recovery
+  count can never dispose a card after recovery.
+  */
+  it("KB-016: the capacity-suppression marker breaks the identical-stall run", () => {
+    expect(countRecentIdenticalStallEntries(task([
+      { timestamp: "2026-05-12T11:57:00.000Z", action: `In-review stall surfaced [merge-blocker]: ${reason}` },
+      { timestamp: "2026-05-12T11:58:00.000Z", action: `In-review stall surfaced [merge-blocker]: ${reason}` },
+      { timestamp: "2026-05-12T11:59:00.000Z", action: "In-review stall suppressed [capacity]: claimed=2/max=2" },
+    ]), { code: "merge-blocker", reason })).toBe(0);
+  });
+
+  it("KB-016: the merge-handoff re-drive marker breaks the identical-stall run", () => {
+    expect(countRecentIdenticalStallEntries(task([
+      { timestamp: "2026-05-12T11:57:00.000Z", action: `In-review stall surfaced [merge-blocker]: ${reason}` },
+      { timestamp: "2026-05-12T11:58:00.000Z", action: `In-review stall surfaced [merge-blocker]: ${reason}` },
+      { timestamp: "2026-05-12T11:59:00.000Z", action: "Merge handoff re-driven [in-review stall]: some reason" },
+    ]), { code: "merge-blocker", reason })).toBe(0);
+  });
+
+  it("KB-016: suppression and re-drive markers are never mistaken for surfaced-dedup entries", () => {
+    // The sweep's surfaced-dedup backward find filters on IN_REVIEW_STALL_LOG_PREFIX; a marker that
+    // prefix-matched it would let a wait marker silence a real stall (or vice versa).
+    expect(IN_REVIEW_STALL_SUPPRESSED_LOG_PREFIX.startsWith(IN_REVIEW_STALL_LOG_PREFIX)).toBe(false);
+    expect(IN_REVIEW_STALL_LOG_PREFIX.startsWith(IN_REVIEW_STALL_SUPPRESSED_LOG_PREFIX)).toBe(false);
+    expect("Merge handoff re-driven [in-review stall]:".startsWith(IN_REVIEW_STALL_LOG_PREFIX)).toBe(false);
   });
 });
 
@@ -309,5 +341,94 @@ describe("getInReviewStallReason", () => {
       updatedAt: new Date(NOW - DEFAULT_STALE_MERGING_MIN_AGE_MS - 60_000).toISOString(),
     }, { now: NOW });
     expect(signal?.code).toBe("transient-merge-status-no-owner");
+  });
+});
+
+describe("getInReviewStallReason capacity suppression (KB-016)", () => {
+  const saturatedCapacity = { claimed: 2, maxConcurrent: 2 };
+  const freeCapacity = { claimed: 1, maxConcurrent: 2 };
+  const staleCompletedReviewTask = {
+    ...baseTask,
+    status: undefined,
+    updatedAt: new Date(NOW - DEFAULT_STALE_MERGING_MIN_AGE_MS - 1).toISOString(),
+  };
+
+  it("marks completed-review-status-none as capacity-suppressed on a saturated board", () => {
+    const signal = getInReviewStallReason({ ...staleCompletedReviewTask }, { now: NOW, capacity: saturatedCapacity });
+    expect(signal?.code).toBe("completed-review-status-none");
+    expect(signal?.suppressedByCapacity).toBe(true);
+    expect(signal?.capacity).toEqual({ claimed: 2, maxConcurrent: 2 });
+  });
+
+  it("marks transient-merge-status-no-owner as capacity-suppressed on a saturated board", () => {
+    const signal = getInReviewStallReason({
+      ...baseTask,
+      status: "merging",
+      updatedAt: new Date(NOW - DEFAULT_STALE_MERGING_MIN_AGE_MS - 60_000).toISOString(),
+    }, { now: NOW, capacity: saturatedCapacity });
+    expect(signal?.code).toBe("transient-merge-status-no-owner");
+    expect(signal?.suppressedByCapacity).toBe(true);
+    expect(signal?.capacity).toEqual({ claimed: 2, maxConcurrent: 2 });
+  });
+
+  it("never capacity-suppresses merge-blocker, even saturated (real-defect fence)", () => {
+    const signal = getInReviewStallReason({
+      ...baseTask,
+      workflowStepResults: [{ workflowStepId: "WS-1", workflowStepName: "gate", status: "failed", phase: "pre-merge" as const }],
+    }, { now: NOW, capacity: saturatedCapacity });
+    expect(signal?.code).toBe("merge-blocker");
+    expect(signal?.suppressedByCapacity).toBeUndefined();
+    expect(signal?.capacity).toBeUndefined();
+  });
+
+  it("never capacity-suppresses merge-retries-exhausted or non-retryable-provider-error, even saturated", () => {
+    const exhausted = getInReviewStallReason(
+      { ...baseTask, mergeRetries: DEFAULT_MAX_AUTO_MERGE_RETRIES, mergeDetails: { mergeConfirmed: false } },
+      { now: NOW, capacity: saturatedCapacity },
+    );
+    expect(exhausted?.code).toBe("merge-retries-exhausted");
+    expect(exhausted?.suppressedByCapacity).toBeUndefined();
+    const terminal = getInReviewStallReason(
+      { ...baseTask, status: "failed", error: "HTTP 400 invalid_request_error: model gpt-5.3-codex is not supported" },
+      { now: NOW, capacity: saturatedCapacity },
+    );
+    expect(terminal?.code).toBe("non-retryable-provider-error");
+    expect(terminal?.suppressedByCapacity).toBeUndefined();
+  });
+
+  it("does not mark when a slot is free (claimed === maxConcurrent - 1)", () => {
+    const signal = getInReviewStallReason({ ...staleCompletedReviewTask }, { now: NOW, capacity: freeCapacity });
+    expect(signal?.code).toBe("completed-review-status-none");
+    expect(signal?.suppressedByCapacity).toBeUndefined();
+    expect(signal?.capacity).toBeUndefined();
+  });
+
+  it("stays byte-identical without a capacity context (no flag on the returned signal)", () => {
+    const signal = getInReviewStallReason({ ...staleCompletedReviewTask }, { now: NOW });
+    expect(signal).toEqual({
+      code: "completed-review-status-none",
+      reason: "Completed review task has no merge owner or status for >= 5 min",
+      observedAt: new Date(NOW).toISOString(),
+    });
+  });
+
+  it("marks saturated cards above the cap (claimed > maxConcurrent, cap lowered mid-flight)", () => {
+    const signal = getInReviewStallReason({ ...staleCompletedReviewTask }, { now: NOW, capacity: { claimed: 5, maxConcurrent: 2 } });
+    expect(signal?.code).toBe("completed-review-status-none");
+    expect(signal?.suppressedByCapacity).toBe(true);
+  });
+
+  it("autoMerge: false still wins over saturation (existing gate, not capacity)", () => {
+    const signal = getInReviewStallReason({ ...staleCompletedReviewTask }, { now: NOW, autoMerge: false, capacity: saturatedCapacity });
+    expect(signal).toBeUndefined();
+  });
+
+  it("zero-step cards stay excluded from completed-review-status-none under saturation", () => {
+    const signal = getInReviewStallReason(
+      { ...staleCompletedReviewTask, steps: [] },
+      { now: NOW, capacity: saturatedCapacity },
+    );
+    expect(signal?.code).not.toBe("completed-review-status-none");
+    expect(signal?.suppressedByCapacity).toBeUndefined();
   });
 });
