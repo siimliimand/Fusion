@@ -271,6 +271,7 @@ export function runWithWatchdog({
     // stdio, forwards chunks live, and retains bounded tails — still no daemon.
     const outTail = captureTail ? createTailSink({ target: stdoutTarget, tailBytes }) : null;
     const errTail = captureTail ? createTailSink({ target: stderrTarget, tailBytes }) : null;
+    // process-supervisor-allowlist: the pipes wrap this foreground wrapper's own child stdio; still not a daemon.
     const child = spawn(command, args, {
       detached: true,
       stdio: captureTail ? ["inherit", "pipe", "pipe"] : "inherit",
