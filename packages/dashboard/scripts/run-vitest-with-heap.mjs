@@ -9,20 +9,31 @@ invokes vitest directly via its package .bin). The first Full Suite runs showed
 the dashboard-lane class failing while single-hop lanes passed, and the nested
 hop is the only structurally unique layer in that chain. The default spawn
 target is now a DIRECT Node invocation of the dashboard-local vitest entry
-(packages/dashboard/node_modules/vitest/vitest.mjs via pathToFileURL), which
+(packages/dashboard/node_modules/vitest/vitest.mjs via its absolute path), which
 removes the hop while preserving the heap NODE_OPTIONS, every forwarded vitest
 arg, and the wall-clock watchdog. The FUSION_RUN_VITEST_SPAWN_OVERRIDE test
 seam is unchanged. The entry is resolved relative to this script's own
 directory (packages/dashboard), not the caller's cwd, so the resolution holds
 under any invocation root; a missing entry fails LOUDLY with the install hint
 instead of letting a nested process manager produce an opaque exit code.
+
+FNXC:DashboardVitestHeapWrapper 2026-11-06-13:09:
+KB-022 Step-5 fresh-checkout proof caught the first cut of this de-nesting
+spawning node with a file: URL STRING as the module argv. Node's CLI treats
+argv entries as filesystem paths (it never parses file URLs), so the child
+resolved `<cwd>/file:/…/vitest.mjs` and died with MODULE_NOT_FOUND in ~2s —
+the same instant-death shape the task set out to eliminate, now caused by the
+fix itself and invisible to shape-only unit tests. The entry is passed as its
+plain absolute path (no URL indirection); a real-spawn regression test now
+executes the resolved default against `vitest --version` so an unloadable argv
+format can never pass review again.
 */
 
 import { existsSync } from "node:fs";
 
 import { spawn } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 import { runWithWatchdog } from "../../../scripts/lib/run-vitest-watchdog.mjs";
 
@@ -77,7 +88,7 @@ export function resolveSpawnCommand({ vitestArgs, env = process.env, dashboardRo
           "Run `pnpm install` in the workspace before invoking dashboard quality lanes.",
       );
     }
-    return { command: process.execPath, args: [pathToFileURL(vitestEntry).href, ...vitestArgs] };
+    return { command: process.execPath, args: [vitestEntry, ...vitestArgs] };
   }
 
   const parsedOverride = JSON.parse(override);

@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   buildNodeEnv,
@@ -252,8 +252,12 @@ describe("run-vitest-with-heap spawn resolution", () => {
 
     expect(command).toBe(process.execPath);
     expect(command).not.toContain("pnpm");
-    const entryUrl = pathToFileURL(join(dashboardRoot, "node_modules", "vitest", "vitest.mjs")).href;
-    expect(args[0]).toBe(entryUrl);
+    // Node's CLI resolves argv module entries as filesystem paths — it never
+    // parses file: URLs — so the entry MUST be the plain absolute path. A URL
+    // string here dies in ~2s with MODULE_NOT_FOUND (KB-022 Step-5 repro).
+    const entryPath = join(dashboardRoot, "node_modules", "vitest", "vitest.mjs");
+    expect(args[0]).toBe(entryPath);
+    expect(args[0]).not.toMatch(/^file:/);
     expect(args.slice(1)).toEqual([
       "run",
       "--project",
@@ -264,6 +268,29 @@ describe("run-vitest-with-heap spawn resolution", () => {
     ]);
     expect(args.join(" ")).not.toContain("pnpm");
   });
+
+  it("spawns successfully end-to-end: the resolved default loads the real vitest entry", async () => {
+    /*
+    FNXC:DashboardVitestHeapWrapper 2026-11-06-13:09:
+    Shape-only assertions let the first de-nested cut pass review while its
+    file:-URL argv was unloadable by node's CLI (MODULE_NOT_FOUND in ~2s — the
+    exact instant-death KB-022 set out to eliminate). This regression executes
+    the actual resolveSpawnCommand default; `vitest --version` is local, fast,
+    and proves the argv format is loadable without running a suite.
+    */
+    const { command, args } = resolveSpawnCommand({ vitestArgs: ["--version"] });
+    const exit = await new Promise<{ code: number; stdout: string }>((resolveExit, reject) => {
+      const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+      let stdout = "";
+      child.stdout?.on("data", (chunk) => {
+        stdout += String(chunk);
+      });
+      child.on("close", (code) => resolveExit({ code: code ?? -1, stdout }));
+      child.on("error", reject);
+    });
+    expect(exit.code).toBe(0);
+    expect(exit.stdout.trim()).toMatch(/\d+\.\d+\.\d+/);
+  }, 30_000);
 
   it("fails loudly with an install hint when the vitest entry is missing", () => {
     const emptyRoot = mkdtempSync(join(tmpdir(), "fusion-run-vitest-missing-entry-"));
