@@ -11,6 +11,7 @@ name: Full Suite (non-blocking)
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 # Key the concurrency group by SHA, not ref: on push to main the ref is
 # always refs/heads/main, so a ref-keyed group with cancel-in-progress would
