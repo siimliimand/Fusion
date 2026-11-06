@@ -433,6 +433,17 @@ describe("PlanningModeModal sequential flow", () => {
     });
     renderSession(sessionId);
     await waitFor(() => expect(mockConnectPlanningStream).toHaveBeenCalledTimes(1));
+    /*
+     * FNXC:PlanningLoadingPoll 2026-11-06-16:57:
+     * The 8-second loading poll is registered by an effect gated on the loading view and active,
+     * while the preceding waitFor resolves on connectPlanningStream — a different async chain —
+     * so the spy read below needed its own causal ordering. Observed once under full-suite load
+     * (1 failure / 86 passed at tree 885fc268ed0, recorded as observed-flake register entry 27
+     * by KB-024): the interval spy held no 8000 ms registration when the poll callback was read.
+     * Gate on the spy observing an 8000 ms registration — the same gate the sibling stale-poll
+     * test uses; same assertion strength, no timeout widening, retry, or skip.
+     */
+    await waitFor(() => expect(intervalSpy.mock.calls.some(([, delay]) => delay === 8000)).toBe(true));
 
     const poll = intervalSpy.mock.calls.find(([, delay]) => delay === 8000)?.[0];
     expect(poll).toBeTypeOf("function");

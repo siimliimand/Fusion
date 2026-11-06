@@ -262,7 +262,7 @@ test("observed-flake register active count, escalation state, and owners stay sy
     },
     {
       heading: "27. Planning Mode loading-poll retry interval-registration race",
-      status: "Active first sighting — recorded 2026-11-06 by KB-024; no repair landed, with a second sighting requiring file-level quarantine.",
+      status: "Active first sighting — recorded 2026-11-06 by KB-024; deterministic test repair landed by KB-028, with a second sighting requiring file-level quarantine.",
     },
     {
       heading: "28. Planning Mode post-Stop plan-review restore settle timeout",
