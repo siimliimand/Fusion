@@ -29,6 +29,19 @@ type LedgerRow = { file: string; line: number; bucket: Bucket; expression: strin
  * FNXC:MemoryMcpCoverage 2026-10-23-08:19:
  * The heartbeat helper remains a single store-resolver call shared by A and C semantics. Keep both
  * rows anchored to that physical call so deduplication preserves the all-roots bijection.
+ *
+ * FNXC:MemoryMcpCoverage 2026-11-06-12:14:
+ * KB-025 realigned five A rows whose calls moved without changing: FIX-6 77d20778b (2026-11-04 PR
+ * landing fallback) shifted merger-ai.ts 565→566 and 638→639 and merger.ts 391→393; FIX-8
+ * 94b392644 (2026-11-04 parser auto-wrap) shifted mission-interview.ts 951→973; KB-009 73f5d603d
+ * (2026-11-06 capacity wake) shifted triage.ts 3555→3633. Position-only repair: the failing run's
+ * diff showed equal 37-entry arrays on both sides of the bijection (38 LEDGER rows; the
+ * agent-heartbeat.ts:210 A/C dedup pair), proving no resolver call site
+ * was added or removed, and each row's expression, bucket, type, and reason are unchanged. This is
+ * ledger maintenance against measured drift — never appease: no needles, scan roots, assertions,
+ * or rows were altered. Upstream row 40 of fn-9475-full-suite-shard-disposition.md (run
+ * 37215243086, 2026-10-04) recorded the same census failure class before the 2026-11-06 push
+ * batch, so this drift is not attributable to KB-003/KB-005/KB-006/KB-011.
  */
 const LEDGER: LedgerRow[] = [
   ["packages/engine/src/executor/resolve-mcp-servers.ts",32,"A","deps.store","TaskStore","executor TaskStore"],
