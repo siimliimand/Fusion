@@ -13,6 +13,11 @@ import { detectUnlandedBranchCommits } from "../worktree-create-outer.js";
  * whose tip carries commits the acquisition base does not contain. The unlanded tip, its worktree,
  * and the branch ref must survive acquisition byte-identically, the refusal must be observable in
  * the task log and run audit, and a fully-landed tip must keep today's acquisition behavior.
+ *
+ * FNXC:WorktreeUnlandedGuard 2026-11-06-01:16:
+ * The happy-path half of FIX-1 is pinned too: a rebuild that re-points a fully-contained branch
+ * tip records exactly one `worktree:branch-rebuild-proceeded` audit with unlandedCommitCount 0
+ * and no refusal, so the observability emit cannot regress silently.
  */
 
 function git(cwd: string, args: string[]): string {
@@ -212,5 +217,76 @@ describe("worktree acquisition unlanded-branch guard", () => {
       expect.stringContaining("Worktree refresh skipped"),
     );
     expect(store.recordRunAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("audits exactly one rebuild-proceeded event when re-acquisition re-points a fully-contained branch tip", async () => {
+    const rootDir = await createFixtureRepo();
+    const baseSha = await commitFile(rootDir, join(rootDir, "base.txt"), "base\n", "base commit");
+    git(rootDir, ["checkout", "-q", "-b", "fusion/fn-dep"]);
+    await commitFile(rootDir, join(rootDir, "dep.txt"), "dep\n", "dep work");
+    git(rootDir, ["checkout", "-q", "main"]);
+    // The base moves on AFTER the task branch forked: the stale tip is fully contained.
+    const mainSha = await commitFile(rootDir, join(rootDir, "main.txt"), "main\n", "main moves on");
+    git(rootDir, ["branch", "fusion/fn-rebuild", baseSha]);
+
+    const { executor, store } = createExecutor(rootDir);
+    // The production collision ladder ends in exactly this git state: delete the
+    // fully-contained stale tip (cleanupConflictingWorktree), then recreate the
+    // branch at the start point (the `git worktree add -b` retry). Stub the same
+    // seam executor-worktree-conflict.test.ts stubs, with real git inside.
+    vi.spyOn(
+      executor as unknown as {
+        tryCreateWorktree: (
+          branch: string,
+          path: string,
+          taskId: string,
+          startPoint?: string,
+          ...rest: unknown[]
+        ) => Promise<{ path: string; branch: string }>;
+      },
+      "tryCreateWorktree",
+    ).mockImplementation(async (branch, path, _taskId, startPoint) => {
+      git(rootDir, ["branch", "-D", branch]);
+      git(rootDir, ["worktree", "add", "-b", branch, path, startPoint as string]);
+      return { path, branch };
+    });
+
+    const createWorktree = (executor as unknown as {
+      createWorktree: (
+        branch: string,
+        path: string,
+        taskId: string,
+        startPoint?: string,
+      ) => Promise<{ path: string; branch: string }>;
+    }).createWorktree.bind(executor);
+    const worktreePath = join(rootDir, ".worktrees", "rebuild");
+
+    const created = await createWorktree("fusion/fn-rebuild", worktreePath, "FN-REBUILD", "fusion/fn-dep");
+
+    // Acquisition succeeded at the requested path on the same branch.
+    expect(created.branch).toBe("fusion/fn-rebuild");
+    expect(realpathSync(created.path)).toBe(realpathSync(worktreePath));
+    // The stale ref was genuinely re-pointed (import commit may sit on top afterwards),
+    // and containment held: no unlanded commit became the subject of the rebuild.
+    const rebuiltTip = git(rootDir, ["rev-parse", "refs/heads/fusion/fn-rebuild"]);
+    expect(rebuiltTip).not.toBe(baseSha);
+    expect(git(rootDir, ["merge-base", "--is-ancestor", baseSha, rebuiltTip])).toBe("");
+    // The observability half of FIX-1: exactly one rebuild-proceeded audit, ids/counts only.
+    const rebuilds = auditEvents(store, "worktree:branch-rebuild-proceeded");
+    expect(rebuilds).toHaveLength(1);
+    expect(rebuilds[0].metadata).toMatchObject({
+      taskId: "FN-REBUILD",
+      branch: "fusion/fn-rebuild",
+      base: mainSha, // guardBaseRef = squash-import mainBase = the local main tip SHA
+      unlandedCommitCount: 0,
+      outcome: "rebuild-proceeded",
+    });
+    expect(auditEvents(store, "worktree:branch-refresh-refused")).toHaveLength(0);
+    expect(store.recordRunAuditEvent).toHaveBeenCalledTimes(1);
+    // No refusal surfaced anywhere on the proceed path.
+    expect(store.logEntry).not.toHaveBeenCalledWith(
+      "FN-REBUILD",
+      expect.stringContaining("Worktree refresh skipped"),
+    );
   });
 });
