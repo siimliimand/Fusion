@@ -813,6 +813,67 @@ describe("AgentLogger", () => {
     });
   });
 
+  /*
+  FNXC:AgentLogging 2026-11-06-12:38:
+  KB-026 regression contract: a store lacking appendAgentLog (the review-convergence-escalation
+  harness shape) must flush safely. These tests reuse vitest's own unhandled-rejection detection —
+  the same mechanism that turned the green CI shard red in Full Suite runs 42202925441 and
+  42188377004 — so a re-introduced unguarded dereference fails this file even though every test
+  body here still passes.
+  */
+  describe("store without appendAgentLog (KB-026)", () => {
+    function createMethodLessStore() {
+      // Harness-store shape with neither append path; production TaskStore always provides both.
+      return {} as unknown as TaskStore;
+    }
+
+    it("flushes safely (no unhandled rejection) when the store lacks both append methods", async () => {
+      const store = createMethodLessStore();
+      const logger = new AgentLogger({
+        store,
+        taskId: "FN-KB026-METHODLESS",
+        flushSizeBytes: 1024,
+        flushIntervalMs: 500,
+      });
+
+      logger.onText("buffered before shutdown");
+      // scheduleEntryFlush fires flushPendingEntries via `void this.flushPendingEntries()` —
+      // the exact fire-and-forget path that used to surface the unhandled TypeError.
+      await vi.advanceTimersByTimeAsync(500);
+      await expect(logger.flush()).resolves.toBeUndefined();
+
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Failed to flush agent log entry for FN-KB026-METHODLESS"),
+      );
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("store lacks appendAgentLog so the write was skipped"),
+      );
+    });
+
+    it("keeps the appendLog callback sink working across the missing-method skip path", async () => {
+      const store = createMethodLessStore();
+      const appendLog = vi.fn().mockResolvedValue(undefined);
+      const logger = new AgentLogger({
+        store,
+        taskId: "FN-KB026-CB",
+        flushSizeBytes: 1024,
+        flushIntervalMs: 500,
+        appendLog,
+      });
+
+      logger.onText("callback sink still receives this");
+      await vi.advanceTimersByTimeAsync(500);
+      await logger.flush();
+
+      expect(appendLog).toHaveBeenCalledTimes(1);
+      expect(appendLog.mock.calls[0]?.[0]).toMatchObject({
+        taskId: "FN-KB026-CB",
+        text: "callback sink still receives this",
+        type: "text",
+      });
+    });
+  });
+
   // ── usage_events emission (U1) ─────────────────────────────────────
   describe("usage_events emission", () => {
     function createUsageStore() {

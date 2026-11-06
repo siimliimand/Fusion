@@ -661,7 +661,20 @@ export class AgentLogger {
           .catch((err) => {
             this.log.warn(`Failed to flush agent log batch for ${this.taskId}: ${err instanceof Error ? err.message : String(err)}`);
           });
-      } else {
+      /*
+      FNXC:AgentLogging 2026-11-06-12:38:
+      KB-026 (recurrence of Full Suite runs 42202925441 / 42188377004): a store without
+      appendAgentLog must degrade to a logged warning, not throw. The non-batch branch used to
+      dereference this.store.appendAgentLog unguarded, so a missing method threw a synchronous
+      TypeError before any .catch could attach; because writeEntry and the flush timers invoke this
+      flush via `void this.flushPendingEntries()`, the rejection escaped the awaited flush() and
+      surfaced as an Unhandled Rejection after the run had gone green, flipping a fully passing
+      vitest shard to exit code 1. A post-run background flush is best-effort telemetry (FN-9175
+      bounded doctrine): when the append method is absent, log a warning, skip the store write,
+      keep the appendLogCb / onEntriesFlushedCb sinks working, and never rethrow. The batch branch
+      above already follows this exact pattern with its appendAgentLogBatch typeof guard.
+      */
+      } else if (typeof (this.store as TaskStore & { appendAgentLog?: unknown }).appendAgentLog === "function") {
         await Promise.all(
           entries.map((entry) => {
             const timing = entry.durationMs !== undefined || entry.timeToFirstTokenMs !== undefined
@@ -675,6 +688,8 @@ export class AgentLogger {
             });
           }),
         );
+      } else {
+        this.log.warn(`Failed to flush agent log entry for ${this.taskId}: store lacks appendAgentLog so the write was skipped`);
       }
     }
 

@@ -44,6 +44,7 @@ function harness(settings: Record<string, unknown>, row = task()) {
       return row;
     }),
     logEntry,
+    appendAgentLog: vi.fn(async () => {}),
     recordRunAuditEvent,
   };
   const run = (stop: ReviewConvergenceStop = repeatStop) => routeReviewConvergenceLadder({
