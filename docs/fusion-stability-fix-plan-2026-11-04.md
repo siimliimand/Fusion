@@ -871,16 +871,20 @@ problem**; this is in-process):
 - Contributing load shape: the managed board grew 24 → 59 tasks in one day (engine-filed
   follow-ups); cgroup peak 12.9 GB (merge clean-rooms, npm installs, postgres in same cgroup).
 
-### Root cause (to be confirmed by snapshot, design below)
+### Root cause (revised 2026-11-06 09:15 UTC)
 
-The process operates repeatedly at the V8 old-space ceiling (~1 GB budget observed) under a
-working set that grows with board size and session count. Suspected unbounded accumulators to
-investigate: persisted `ai_sessions.conversation_history` (planning/interview transcripts),
-`task_documents`/`task_log` working sets per poll, the triage poll's whole-board materialization
-(`discoverReadyPlanningTasks` resolves every candidate), run-audit and listener arrays surfaced in
-diagnostics, and merge clean-room transients. The 110 % spin with climbing RSS is GC thrash
-against the near-full old space — the loop yields just enough for timers to fire (watchdogs log),
-but no request or poll can complete.
+The process operates repeatedly at runaway CPU (110 %+ instantaneous, `R` state) with RSS climbing
+~44 MB/min under an **8 GB old-space budget** (`NODE_OPTIONS=--max-old-space-size=8192` is already
+set in `fusion.service` — item 3 below is therefore pre-satisfied). The 2026-11-05
+`heap=1014MB/1.0GB` diagnostics reading is now suspected to be a **misformatted budget** (the
+diagnostics loop assuming a 1 GB default while the unit sets 8192), not a true ceiling. The wedge
+is therefore more likely an unbounded CPU loop with allocation churn than GC thrash: candidates
+are the degenerate JSON-stream repair (engine self-filed KB-001 "FIX-12a, P0"), retry storms, and
+board-scale poll working sets. Wedge cycle on 2026-11-06: **~50 minutes** (wedge at ~08:12,
+restarted 09:04; RSS 2.26 GB in 51 min vs 1.8 GB in 11 h the previous day). A stopgap
+`fusion-healthd` guard (health-probe → auto-restart after 2 failures, CPU/RSS/threads evidence
+trail at `/var/lib/fusion-healthd/trail.log`) is deployed 2026-11-06 to convert wedges into
+~2-minute blips until this fix lands; its trail is the evidence source for items 1–2.
 
 ### Change design
 
@@ -1024,6 +1028,39 @@ handoff the moment a slot frees, never disposed.
 ### Verification
 
 File-scoped core+engine vitest + `pnpm verify:fast`. Changeset: `patch`, `category: fix`.
+
+---
+
+## OPS-2 (done 2026-11-06) — Engine push identity, fork Actions dormancy, wedge auto-recovery
+
+Three host/repo defects blocked every fusion-repo landing's CI-evidence path; all fixed in this
+operator session, each reversible:
+
+1. **Engine push identity**: `fusion.service` runs as user `fusion`, which had **no SSH key at
+   all** (`Permission denied (publickey)`), so the engine's git-push step failed on every
+   `siimliimand/Fusion` landing (access-rights errors at 05:22–08:43 in the journal). Fix:
+   generated `/home/fusion/.ssh/id_ed25519` and registered it as read-write **deploy key**
+   `fusion-engine@factory.webuilder.dev (read-write)` (GitHub key id 168972917) on
+   `siimliimand/Fusion` via gh API. Undo: `gh api -X DELETE repos/siimliimand/Fusion/keys/168972917`.
+   Verified: `ssh -T` greets `Hi siimliimand/Fusion!`.
+2. **Worktree fetch host-key failures**: executor worktree fetches ran with a HOME lacking
+   `known_hosts` → `Host key verification failed` (KB-017 rebase fetch). Fix: system-wide
+   `/etc/ssh/ssh_known_hosts` with github.com host keys. Undo: remove the file.
+3. **Fork Actions dormancy**: `siimliimand/Fusion` is a **fork** — Actions enabled but zero
+   workflow runs had ever executed, so post-merge CI-evidence gates could never pass even with
+   successful pushes. Fix: `PUT /actions/permissions` (enabled/all) + pushed
+   `eed0ab445` adding `workflow_dispatch:` to `full-suite.yml`; first-ever run
+   (Full Suite, push, `eed0ab44`) went `in_progress` within 45 s. Undo: none needed (additive).
+4. **Wedge auto-recovery stopgap**: `fusion-healthd.service` (see FIX-13) auto-restarts the
+   engine after 2 consecutive failed health probes and records an evidence trail. Undo:
+   `systemctl disable --now fusion-healthd && rm /usr/local/bin/fusion-healthd.sh`.
+
+Also pushed 2026-11-06: the first five unpushed landings (`d625586b8` KB-005, `a40adf9f9` KB-003,
+`ee7c9ae27` KB-006, `28bc7b2e3` KB-011) plus this repo's fix-plan doc — as `root` (deploy key
+verification happened after). Note for FIX-6/FIX-14: push failures are silent-non-fatal in the
+landing path; the evidence gate then deadlocks in-review. A landing whose push fails should
+surface the failure on the card (and FIX-14's handoff re-drive should retry the push, not just
+the merge).
 
 ---
 
