@@ -3642,7 +3642,7 @@
     },
     {
       "callSiteId": "packages/engine/src/agent-tools.ts::createTaskFileScopeAddTool::store.appendAgentLog::#1",
-      "callSiteFingerprint": "store .appendAgentLog(taskId,`Added to File Scope: ${toAdd.join(\", \")}${params.reason ? ` \u2014 ${params.reason}` : \"\"}`,\"status\")",
+      "callSiteFingerprint": "store .appendAgentLog(taskId,`Added to File Scope: ${toAdd.join(\", \")}${params.reason ? ` — ${params.reason}` : \"\"}`,\"status\")",
       "file": "packages/engine/src/agent-tools.ts",
       "enclosingSymbolPath": "createTaskFileScopeAddTool",
       "writer": "store.appendAgentLog",
@@ -4324,7 +4324,7 @@
     },
     {
       "callSiteId": "packages/engine/src/execution/lifecycle-move.ts::moveTaskToContainedBackwardTarget::store.logEntry::#1",
-      "callSiteFingerprint": "store.logEntry(taskId,`Lifecycle recovery retained in '${column}' \u2014 ${reason} has no backward-move authority`)",
+      "callSiteFingerprint": "store.logEntry(taskId,`Lifecycle recovery retained in '${column}' — ${reason} has no backward-move authority`)",
       "file": "packages/engine/src/execution/lifecycle-move.ts",
       "enclosingSymbolPath": "moveTaskToContainedBackwardTarget",
       "writer": "store.logEntry",
@@ -4344,7 +4344,7 @@
     },
     {
       "callSiteId": "packages/engine/src/execution/lifecycle-move.ts::moveTaskToContainedBackwardTarget::store.logEntry::#2",
-      "callSiteFingerprint": "store.logEntry(taskId,`Lifecycle rebound contained in '${column}' \u2014 the workflow declares no adjacent backward destination`)",
+      "callSiteFingerprint": "store.logEntry(taskId,`Lifecycle rebound contained in '${column}' — the workflow declares no adjacent backward destination`)",
       "file": "packages/engine/src/execution/lifecycle-move.ts",
       "enclosingSymbolPath": "moveTaskToContainedBackwardTarget",
       "writer": "store.logEntry",
@@ -4364,7 +4364,7 @@
     },
     {
       "callSiteId": "packages/engine/src/execution/lifecycle-move.ts::moveTaskWithLifecycleReason::store.logEntry::#1",
-      "callSiteFingerprint": "store.logEntry(taskId,`Lifecycle move deferred: ${task.column} \u2192 ${toColumn} (backward) \u2014 ${summary} (destination at capacity; retrying later))",
+      "callSiteFingerprint": "store.logEntry(taskId,`Lifecycle move deferred: ${task.column} → ${toColumn} (backward) — ${summary} (destination at capacity; retrying later))",
       "file": "packages/engine/src/execution/lifecycle-move.ts",
       "enclosingSymbolPath": "moveTaskWithLifecycleReason",
       "writer": "store.logEntry",
@@ -4418,7 +4418,7 @@
     },
     {
       "callSiteId": "packages/engine/src/execution/reviewer.ts::reviewStep::store.logEntry::#1",
-      "callSiteFingerprint": "options.store.logEntry(options.taskId,`${reviewType} review skipped \u2014 ${reason} active`)",
+      "callSiteFingerprint": "options.store.logEntry(options.taskId,`${reviewType} review skipped — ${reason} active`)",
       "file": "packages/engine/src/execution/reviewer.ts",
       "enclosingSymbolPath": "reviewStep",
       "writer": "store.logEntry",
@@ -4458,7 +4458,7 @@
     },
     {
       "callSiteId": "packages/engine/src/execution/reviewer.ts::reviewStep>buildPauseUnavailableResult::store.logEntry::#1",
-      "callSiteFingerprint": "options.store.logEntry(options.taskId,`${reviewType} review aborted before spawn \u2014 ${reason} active`)",
+      "callSiteFingerprint": "options.store.logEntry(options.taskId,`${reviewType} review aborted before spawn — ${reason} active`)",
       "file": "packages/engine/src/execution/reviewer.ts",
       "enclosingSymbolPath": "reviewStep>buildPauseUnavailableResult",
       "writer": "store.logEntry",
@@ -4938,7 +4938,7 @@
     },
     {
       "callSiteId": "packages/engine/src/executor/execute-workflow-graph.ts::executeWorkflowGraph::store.logEntry::#1",
-      "callSiteFingerprint": "deps.store.logEntry(task.id,`Workflow stage held \u2014 ${principalHoldReason}`)",
+      "callSiteFingerprint": "deps.store.logEntry(task.id,`Workflow stage held — ${principalHoldReason}`)",
       "file": "packages/engine/src/executor/execute-workflow-graph.ts",
       "enclosingSymbolPath": "executeWorkflowGraph",
       "writer": "store.logEntry",
@@ -5226,7 +5226,7 @@
     },
     {
       "callSiteId": "packages/engine/src/executor/review-empty-content-close.ts::terminalizeEmptyReviewContent::store.logEntry::#1",
-      "callSiteFingerprint": "deps.store.logEntry(taskId,`No reviewable content \u2014 terminal park recorded for ${fence.stepName}`,`Gate ${fence.workflowStepId} rejected a provably empty diff. No remediation round can help until new work exists.`,deps.getRunContextFor(taskId))",
+      "callSiteFingerprint": "deps.store.logEntry(taskId,`No reviewable content — terminal park recorded for ${fence.stepName}`,`Gate ${fence.workflowStepId} rejected a provably empty diff. No remediation round can help until new work exists.`,deps.getRunContextFor(taskId))",
       "file": "packages/engine/src/executor/review-empty-content-close.ts",
       "enclosingSymbolPath": "terminalizeEmptyReviewContent",
       "writer": "store.logEntry",
@@ -5502,7 +5502,7 @@
     },
     {
       "callSiteId": "packages/engine/src/executor/run-graph-custom-node.ts::runGraphCustomNode::store.logEntry::#1",
-      "callSiteFingerprint": "deps.store.logEntry(live.id,`Workflow input received for step '${node.id}' \u2014 resuming`,undefined,deps.getRunContextFor(live.id))",
+      "callSiteFingerprint": "deps.store.logEntry(live.id,`Workflow input received for step '${node.id}' — resuming`,undefined,deps.getRunContextFor(live.id))",
       "file": "packages/engine/src/executor/run-graph-custom-node.ts",
       "enclosingSymbolPath": "runGraphCustomNode",
       "writer": "store.logEntry",
@@ -5542,7 +5542,7 @@
     },
     {
       "callSiteId": "packages/engine/src/executor/run-graph-custom-node.ts::runGraphCustomNode::store.logEntry::#2",
-      "callSiteFingerprint": "deps.store.logEntry(live.id,`Fast mode \u2014 custom graph node '${node.id}' skipped`,undefined,deps.getRunContextFor(live.id))",
+      "callSiteFingerprint": "deps.store.logEntry(live.id,`Fast mode — custom graph node '${node.id}' skipped`,undefined,deps.getRunContextFor(live.id))",
       "file": "packages/engine/src/executor/run-graph-custom-node.ts",
       "enclosingSymbolPath": "runGraphCustomNode",
       "writer": "store.logEntry",
@@ -5622,7 +5622,7 @@
     },
     {
       "callSiteId": "packages/engine/src/executor/run-graph-custom-node.ts::runGraphCustomNode::store.logEntry::#6",
-      "callSiteFingerprint": "deps.store.logEntry(live.id,`Workflow node '${node.id}': column agent '${columnAgentId}' (${columnAgentMode}) not applied \u2014 raw CLI execution runs n,undefined,deps.getRunContextFor(live.id))",
+      "callSiteFingerprint": "deps.store.logEntry(live.id,`Workflow node '${node.id}': column agent '${columnAgentId}' (${columnAgentMode}) not applied — raw CLI execution runs n,undefined,deps.getRunContextFor(live.id))",
       "file": "packages/engine/src/executor/run-graph-custom-node.ts",
       "enclosingSymbolPath": "runGraphCustomNode",
       "writer": "store.logEntry",
@@ -5642,7 +5642,7 @@
     },
     {
       "callSiteId": "packages/engine/src/executor/run-graph-custom-node.ts::runGraphCustomNode::store.logEntry::#7",
-      "callSiteFingerprint": "deps.store.logEntry(live.id,`Workflow node '${node.id}': agent '${cfg.agentId}' not found \u2014 using default model`,undefined,deps.getRunContextFor(live.id))",
+      "callSiteFingerprint": "deps.store.logEntry(live.id,`Workflow node '${node.id}': agent '${cfg.agentId}' not found — using default model`,undefined,deps.getRunContextFor(live.id))",
       "file": "packages/engine/src/executor/run-graph-custom-node.ts",
       "enclosingSymbolPath": "runGraphCustomNode",
       "writer": "store.logEntry",
@@ -5800,7 +5800,7 @@
     },
     {
       "callSiteId": "packages/engine/src/executor/workflow-principal-before-node.ts::admitWorkflowPrincipalBeforeNode::store.logEntry::#1",
-      "callSiteFingerprint": "deps.store.logEntry(nodeTask.id,`Workflow principal fence write failed at node '${node.id}' \u2014 ${detail.slice(0, 300)}${cause}`)",
+      "callSiteFingerprint": "deps.store.logEntry(nodeTask.id,`Workflow principal fence write failed at node '${node.id}' — ${detail.slice(0, 300)}${cause}`)",
       "file": "packages/engine/src/executor/workflow-principal-before-node.ts",
       "enclosingSymbolPath": "admitWorkflowPrincipalBeforeNode",
       "writer": "store.logEntry",
@@ -5892,7 +5892,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merge/auto-merge-finalization.ts::finalizeProvenAutoMergeTask::store.logEntry::#1",
-      "callSiteFingerprint": "store.logEntry(taskId,`Auto-merge finalization repaired column mismatch: ${latest.column} \u2192 ${completeColumn} after proven merge; cleared stal)",
+      "callSiteFingerprint": "store.logEntry(taskId,`Auto-merge finalization repaired column mismatch: ${latest.column} → ${completeColumn} after proven merge; cleared stal)",
       "file": "packages/engine/src/merge/auto-merge-finalization.ts",
       "enclosingSymbolPath": "finalizeProvenAutoMergeTask",
       "writer": "store.logEntry",
@@ -6378,7 +6378,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merge/merger-ai.ts::landWorkspaceTask::store.logEntry::#1",
-      "callSiteFingerprint": "store.logEntry(taskId,`Finalize blocked (empty-merge no-landed-proof guard, workspace): ${reason} \u2014 contained recovery target ${reboundColumn},JSON.stringify({ lane: \"ai-empty-merge-workspace\", repoCount: repos.length, landedCount, repos: repos.map((r) => r.repo))",
+      "callSiteFingerprint": "store.logEntry(taskId,`Finalize blocked (empty-merge no-landed-proof guard, workspace): ${reason} — contained recovery target ${reboundColumn},JSON.stringify({ lane: \"ai-empty-merge-workspace\", repoCount: repos.length, landedCount, repos: repos.map((r) => r.repo))",
       "file": "packages/engine/src/merge/merger-ai.ts",
       "enclosingSymbolPath": "landWorkspaceTask",
       "writer": "store.logEntry",
@@ -6708,7 +6708,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merge/merger-ai.ts::runAiMerge::store.logEntry::#1",
-      "callSiteFingerprint": "store.logEntry(taskId,`Finalize blocked (no-commits incomplete-work guard): ${reason} \u2014 contained recovery target ${reboundColumn} with progre,JSON.stringify({ doneCount: noCommitsFinalize.doneCount, incompleteCount: noCommitsFinalize.incompleteCount, branch, int)",
+      "callSiteFingerprint": "store.logEntry(taskId,`Finalize blocked (no-commits incomplete-work guard): ${reason} — contained recovery target ${reboundColumn} with progre,JSON.stringify({ doneCount: noCommitsFinalize.doneCount, incompleteCount: noCommitsFinalize.incompleteCount, branch, int)",
       "file": "packages/engine/src/merge/merger-ai.ts",
       "enclosingSymbolPath": "runAiMerge",
       "writer": "store.logEntry",
@@ -6732,7 +6732,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merge/merger-ai.ts::runAiMerge::store.logEntry::#2",
-      "callSiteFingerprint": "store.logEntry(taskId,`Finalize blocked (no-commits incomplete-work guard): ${reason} \u2014 contained recovery target ${reboundColumn} with progre,JSON.stringify({ doneCount: noCommitsFinalize.doneCount, incompleteCount: noCommitsFinalize.incompleteCount, branch, int)",
+      "callSiteFingerprint": "store.logEntry(taskId,`Finalize blocked (no-commits incomplete-work guard): ${reason} — contained recovery target ${reboundColumn} with progre,JSON.stringify({ doneCount: noCommitsFinalize.doneCount, incompleteCount: noCommitsFinalize.incompleteCount, branch, int)",
       "file": "packages/engine/src/merge/merger-ai.ts",
       "enclosingSymbolPath": "runAiMerge",
       "writer": "store.logEntry",
@@ -6756,7 +6756,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merge/merger-ai.ts::runAiMerge::store.logEntry::#3",
-      "callSiteFingerprint": "store.logEntry(taskId,`Finalize blocked (empty-merge no-landed-proof guard): ${reason} \u2014 contained recovery target ${reboundColumn} with progr,JSON.stringify({ branch, integrationBranch, lane: \"ai-empty-merge\", baseCommitSha: task.baseCommitSha }, null, 2))",
+      "callSiteFingerprint": "store.logEntry(taskId,`Finalize blocked (empty-merge no-landed-proof guard): ${reason} — contained recovery target ${reboundColumn} with progr,JSON.stringify({ branch, integrationBranch, lane: \"ai-empty-merge\", baseCommitSha: task.baseCommitSha }, null, 2))",
       "file": "packages/engine/src/merge/merger-ai.ts",
       "enclosingSymbolPath": "runAiMerge",
       "writer": "store.logEntry",
@@ -6780,7 +6780,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merge/merger-ai.ts::runAiMerge::store.logEntry::#4",
-      "callSiteFingerprint": "store.logEntry(taskId,`Finalize blocked (overseer failed-executor veto): ${vetoReason} \u2014 contained recovery target ${reboundColumn} with progr,JSON.stringify({ executorSignal: executorMemory?.signal, executorSignalObservedAt: executorMemory?.observedAt, branch, i)",
+      "callSiteFingerprint": "store.logEntry(taskId,`Finalize blocked (overseer failed-executor veto): ${vetoReason} — contained recovery target ${reboundColumn} with progr,JSON.stringify({ executorSignal: executorMemory?.signal, executorSignalObservedAt: executorMemory?.observedAt, branch, i)",
       "file": "packages/engine/src/merge/merger-ai.ts",
       "enclosingSymbolPath": "runAiMerge",
       "writer": "store.logEntry",
@@ -6960,7 +6960,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merge/merger-ai.ts::runPushAfterMergeStep::store.logEntry::#1",
-      "callSiteFingerprint": "store.logEntry(taskId,`Push to remote failed after merge \u2014 task finalized anyway; local ${integrationBranch} may diverge from ${pushOutcome.re,\"PushToRemoteFailed\")",
+      "callSiteFingerprint": "store.logEntry(taskId,`Push to remote failed after merge — task finalized anyway; local ${integrationBranch} may diverge from ${pushOutcome.re,\"PushToRemoteFailed\")",
       "file": "packages/engine/src/merge/merger-ai.ts",
       "enclosingSymbolPath": "runPushAfterMergeStep",
       "writer": "store.logEntry",
@@ -7008,7 +7008,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merge/merger-ai.ts::runPushAfterMergeStep::store.logEntry::#3",
-      "callSiteFingerprint": "store.logEntry(taskId,`Push to remote threw after merge \u2014 task finalized anyway; local ${integrationBranch} may diverge from origin: ${message,\"PushToRemoteFailed\")",
+      "callSiteFingerprint": "store.logEntry(taskId,`Push to remote threw after merge — task finalized anyway; local ${integrationBranch} may diverge from origin: ${message,\"PushToRemoteFailed\")",
       "file": "packages/engine/src/merge/merger-ai.ts",
       "enclosingSymbolPath": "runPushAfterMergeStep",
       "writer": "store.logEntry",
@@ -7658,7 +7658,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merge/ruleset-pr-landing.ts::engageRulesetPrLanding::store.logEntry::#1",
-      "callSiteFingerprint": "store.logEntry(taskId,`Push to ${remote}/${targetBranch} was declined by repository rules \u2014 engaging PR landing fallback (head ${headBranch} \u2192,\"RulesetPrLanding\")",
+      "callSiteFingerprint": "store.logEntry(taskId,`Push to ${remote}/${targetBranch} was declined by repository rules — engaging PR landing fallback (head ${headBranch} →,\"RulesetPrLanding\")",
       "file": "packages/engine/src/merge/ruleset-pr-landing.ts",
       "enclosingSymbolPath": "engageRulesetPrLanding",
       "writer": "store.logEntry",
@@ -7698,7 +7698,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merge/ruleset-pr-landing.ts::engageRulesetPrLanding::store.logEntry::#3",
-      "callSiteFingerprint": "store.logEntry(taskId,`PR landing fallback merged ${prUrl || headBranch} (squash) \u2014 ${targetBranch} advanced to ${sync.newMainSha || \"(unresol,\"RulesetPrLanding\")",
+      "callSiteFingerprint": "store.logEntry(taskId,`PR landing fallback merged ${prUrl || headBranch} (squash) — ${targetBranch} advanced to ${sync.newMainSha || \"(unresol,\"RulesetPrLanding\")",
       "file": "packages/engine/src/merge/ruleset-pr-landing.ts",
       "enclosingSymbolPath": "engageRulesetPrLanding",
       "writer": "store.logEntry",
@@ -7738,7 +7738,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merge/ruleset-pr-landing.ts::parkChecksPending::store.logEntry::#1",
-      "callSiteFingerprint": "store.logEntry(taskId,`${marker} \u2014 required checks did not report within the bounded wait (${RULESET_PR_CHECKS_TIMEOUT_MS / 60000} min). The P,\"RulesetPrLanding\")",
+      "callSiteFingerprint": "store.logEntry(taskId,`${marker} — required checks did not report within the bounded wait (${RULESET_PR_CHECKS_TIMEOUT_MS / 60000} min). The P,\"RulesetPrLanding\")",
       "file": "packages/engine/src/merge/ruleset-pr-landing.ts",
       "enclosingSymbolPath": "parkChecksPending",
       "writer": "store.logEntry",
@@ -7798,7 +7798,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merge/ruleset-pr-landing.ts::syncLocalIntegrationRefAfterPrMerge::store.logEntry::#2",
-      "callSiteFingerprint": "store.logEntry(taskId,`PR landing fallback: merge-advance auto-sync threw \u2014 continuing: ${syncError instanceof Error ? syncError.message : Str,\"RulesetPrLanding\")",
+      "callSiteFingerprint": "store.logEntry(taskId,`PR landing fallback: merge-advance auto-sync threw — continuing: ${syncError instanceof Error ? syncError.message : Str,\"RulesetPrLanding\")",
       "file": "packages/engine/src/merge/ruleset-pr-landing.ts",
       "enclosingSymbolPath": "syncLocalIntegrationRefAfterPrMerge",
       "writer": "store.logEntry",
@@ -7878,7 +7878,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merger.ts::aiMergeTask::store.appendAgentLog::#1",
-      "callSiteFingerprint": "store.appendAgentLog(taskId,`Pre-merge auto-prerebase: ${branch} \u2192 local HEAD ${mainHead.slice(0, 8)} (${prerebaseDecision.reason})`,\"status\",undefined,\"merger\")",
+      "callSiteFingerprint": "store.appendAgentLog(taskId,`Pre-merge auto-prerebase: ${branch} → local HEAD ${mainHead.slice(0, 8)} (${prerebaseDecision.reason})`,\"status\",undefined,\"merger\")",
       "file": "packages/engine/src/merger.ts",
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.appendAgentLog",
@@ -7898,7 +7898,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merger.ts::aiMergeTask::store.appendAgentLog::#2",
-      "callSiteFingerprint": "store.appendAgentLog(taskId,`Pre-merge rebase: ${branch} \u2192 ${remoteRef}`,\"status\",undefined,\"merger\")",
+      "callSiteFingerprint": "store.appendAgentLog(taskId,`Pre-merge rebase: ${branch} → ${remoteRef}`,\"status\",undefined,\"merger\")",
       "file": "packages/engine/src/merger.ts",
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.appendAgentLog",
@@ -7998,7 +7998,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merger.ts::aiMergeTask::store.appendAgentLog::#7",
-      "callSiteFingerprint": "store.appendAgentLog(taskId,summaryParts.join(\" \u00b7 \"),\"status\",undefined,\"merger\")",
+      "callSiteFingerprint": "store.appendAgentLog(taskId,summaryParts.join(\" · \"),\"status\",undefined,\"merger\")",
       "file": "packages/engine/src/merger.ts",
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.appendAgentLog",
@@ -8216,7 +8216,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merger.ts::aiMergeTask::store.logEntry::#18",
-      "callSiteFingerprint": "store.logEntry(taskId,`Push to remote failed after merge \u2014 task marked done anyway; local main may diverge from origin: ${pushResult.error}`,\"PushToRemoteFailed\")",
+      "callSiteFingerprint": "store.logEntry(taskId,`Push to remote failed after merge — task marked done anyway; local main may diverge from origin: ${pushResult.error}`,\"PushToRemoteFailed\")",
       "file": "packages/engine/src/merger.ts",
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.logEntry",
@@ -8256,7 +8256,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merger.ts::aiMergeTask::store.logEntry::#2",
-      "callSiteFingerprint": "store.logEntry(taskId,`Finalize blocked (no-commits incomplete-work guard): ${reason} \u2014 moving back to todo with progress preserved`,JSON.stringify({ doneCount: noCommitsFinalize.doneCount, incompleteCount: noCommitsFinalize.incompleteCount, classificat)",
+      "callSiteFingerprint": "store.logEntry(taskId,`Finalize blocked (no-commits incomplete-work guard): ${reason} — moving back to todo with progress preserved`,JSON.stringify({ doneCount: noCommitsFinalize.doneCount, incompleteCount: noCommitsFinalize.incompleteCount, classificat)",
       "file": "packages/engine/src/merger.ts",
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.logEntry",
@@ -8276,7 +8276,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merger.ts::aiMergeTask::store.logEntry::#20",
-      "callSiteFingerprint": "store.logEntry(taskId,`Push to remote threw after merge \u2014 task marked done anyway; local main may diverge from origin: ${err.message}`,\"PushToRemoteFailed\")",
+      "callSiteFingerprint": "store.logEntry(taskId,`Push to remote threw after merge — task marked done anyway; local main may diverge from origin: ${err.message}`,\"PushToRemoteFailed\")",
       "file": "packages/engine/src/merger.ts",
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.logEntry",
@@ -8336,7 +8336,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merger.ts::aiMergeTask::store.logEntry::#5",
-      "callSiteFingerprint": "store.logEntry(taskId,`Finalize blocked: unproven ownership evidence (${classification.reason}); no owned landed commit was found \u2014 auto-retry,JSON.stringify(classification.details, null, 2))",
+      "callSiteFingerprint": "store.logEntry(taskId,`Finalize blocked: unproven ownership evidence (${classification.reason}); no owned landed commit was found — auto-retry,JSON.stringify(classification.details, null, 2))",
       "file": "packages/engine/src/merger.ts",
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.logEntry",
@@ -8416,7 +8416,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merger.ts::aiMergeTask::store.logEntry::#9",
-      "callSiteFingerprint": "store.logEntry(taskId,`Finalize blocked (no-commits incomplete-work guard): ${reason} \u2014 moving back to todo with progress preserved`,JSON.stringify({ doneCount: noCommitsFinalize.doneCount, incompleteCount: noCommitsFinalize.incompleteCount, classificat)",
+      "callSiteFingerprint": "store.logEntry(taskId,`Finalize blocked (no-commits incomplete-work guard): ${reason} — moving back to todo with progress preserved`,JSON.stringify({ doneCount: noCommitsFinalize.doneCount, incompleteCount: noCommitsFinalize.incompleteCount, classificat)",
       "file": "packages/engine/src/merger.ts",
       "enclosingSymbolPath": "aiMergeTask",
       "writer": "store.logEntry",
@@ -8946,7 +8946,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merger.ts::aiMergeTask>mergeAttempt::store.appendAgentLog::#10",
-      "callSiteFingerprint": "store.appendAgentLog(taskId,`In-merge verification fix attempt ${fixAttempt} failed`,\"tool_error\",`${fixAttemptDurationMs}ms \u2014 verification still fails`,\"merger\")",
+      "callSiteFingerprint": "store.appendAgentLog(taskId,`In-merge verification fix attempt ${fixAttempt} failed`,\"tool_error\",`${fixAttemptDurationMs}ms — verification still fails`,\"merger\")",
       "file": "packages/engine/src/merger.ts",
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.appendAgentLog",
@@ -8966,7 +8966,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merger.ts::aiMergeTask>mergeAttempt::store.appendAgentLog::#11",
-      "callSiteFingerprint": "store.appendAgentLog(taskId,\"Verification fix finalize: task already landed on main \u2014 recovered\",\"tool_result\",`via=${finalized.strategy} sha=${finalized.mergeSha?.slice(0, 8)}`,\"merger\")",
+      "callSiteFingerprint": "store.appendAgentLog(taskId,\"Verification fix finalize: task already landed on main — recovered\",\"tool_result\",`via=${finalized.strategy} sha=${finalized.mergeSha?.slice(0, 8)}`,\"merger\")",
       "file": "packages/engine/src/merger.ts",
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.appendAgentLog",
@@ -8986,7 +8986,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merger.ts::aiMergeTask>mergeAttempt::store.appendAgentLog::#2",
-      "callSiteFingerprint": "store.appendAgentLog(taskId,`Verification failed \u2014 attempting in-merge fix (up to ${maxFixRetries} attempts)`,\"status\",undefined,\"merger\")",
+      "callSiteFingerprint": "store.appendAgentLog(taskId,`Verification failed — attempting in-merge fix (up to ${maxFixRetries} attempts)`,\"status\",undefined,\"merger\")",
       "file": "packages/engine/src/merger.ts",
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.appendAgentLog",
@@ -9026,7 +9026,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merger.ts::aiMergeTask>mergeAttempt::store.appendAgentLog::#4",
-      "callSiteFingerprint": "store.appendAgentLog(taskId,`In-merge verification fix succeeded on attempt ${fixAttempt}`,\"tool_result\",`${fixAttemptDurationMs}ms \u2014 verification now passes`,\"merger\")",
+      "callSiteFingerprint": "store.appendAgentLog(taskId,`In-merge verification fix succeeded on attempt ${fixAttempt}`,\"tool_result\",`${fixAttemptDurationMs}ms — verification now passes`,\"merger\")",
       "file": "packages/engine/src/merger.ts",
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.appendAgentLog",
@@ -9046,7 +9046,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merger.ts::aiMergeTask>mergeAttempt::store.appendAgentLog::#5",
-      "callSiteFingerprint": "store.appendAgentLog(taskId,`In-merge verification fix attempt ${fixAttempt} failed`,\"tool_error\",`${fixAttemptDurationMs}ms \u2014 verification still fails`,\"merger\")",
+      "callSiteFingerprint": "store.appendAgentLog(taskId,`In-merge verification fix attempt ${fixAttempt} failed`,\"tool_error\",`${fixAttemptDurationMs}ms — verification still fails`,\"merger\")",
       "file": "packages/engine/src/merger.ts",
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.appendAgentLog",
@@ -9066,7 +9066,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merger.ts::aiMergeTask>mergeAttempt::store.appendAgentLog::#6",
-      "callSiteFingerprint": "store.appendAgentLog(taskId,\"Verification fix finalize: task already landed on main \u2014 recovered\",\"tool_result\",`via=${finalized.strategy} sha=${finalized.mergeSha?.slice(0, 8)}`,\"merger\")",
+      "callSiteFingerprint": "store.appendAgentLog(taskId,\"Verification fix finalize: task already landed on main — recovered\",\"tool_result\",`via=${finalized.strategy} sha=${finalized.mergeSha?.slice(0, 8)}`,\"merger\")",
       "file": "packages/engine/src/merger.ts",
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.appendAgentLog",
@@ -9086,7 +9086,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merger.ts::aiMergeTask>mergeAttempt::store.appendAgentLog::#7",
-      "callSiteFingerprint": "store.appendAgentLog(taskId,\"Build verification failed \u2014 attempting in-merge fix\",\"status\",undefined,\"merger\")",
+      "callSiteFingerprint": "store.appendAgentLog(taskId,\"Build verification failed — attempting in-merge fix\",\"status\",undefined,\"merger\")",
       "file": "packages/engine/src/merger.ts",
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.appendAgentLog",
@@ -9166,7 +9166,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merger.ts::aiMergeTask>mergeAttempt::store.logEntry::#10",
-      "callSiteFingerprint": "store.logEntry(taskId,`[timing] In-merge verification fix attempt ${fixAttempt} \u2014 verification still fails (${fixAttemptDurationMs}ms)`)",
+      "callSiteFingerprint": "store.logEntry(taskId,`[timing] In-merge verification fix attempt ${fixAttempt} — verification still fails (${fixAttemptDurationMs}ms)`)",
       "file": "packages/engine/src/merger.ts",
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.logEntry",
@@ -9206,7 +9206,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merger.ts::aiMergeTask>mergeAttempt::store.logEntry::#12",
-      "callSiteFingerprint": "store.logEntry(taskId,\"Build failed \u2014 retrying merge attempt\")",
+      "callSiteFingerprint": "store.logEntry(taskId,\"Build failed — retrying merge attempt\")",
       "file": "packages/engine/src/merger.ts",
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.logEntry",
@@ -9226,7 +9226,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merger.ts::aiMergeTask>mergeAttempt::store.logEntry::#2",
-      "callSiteFingerprint": "store.logEntry(taskId,`Verification failed during merge \u2014 attempting in-merge fix (up to ${maxFixRetries} attempts)`)",
+      "callSiteFingerprint": "store.logEntry(taskId,`Verification failed during merge — attempting in-merge fix (up to ${maxFixRetries} attempts)`)",
       "file": "packages/engine/src/merger.ts",
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.logEntry",
@@ -9266,7 +9266,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merger.ts::aiMergeTask>mergeAttempt::store.logEntry::#4",
-      "callSiteFingerprint": "store.logEntry(taskId,`[timing] In-merge verification fix succeeded on attempt ${fixAttempt} in ${fixAttemptDurationMs}ms \u2014 verification now p)",
+      "callSiteFingerprint": "store.logEntry(taskId,`[timing] In-merge verification fix succeeded on attempt ${fixAttempt} in ${fixAttemptDurationMs}ms — verification now p)",
       "file": "packages/engine/src/merger.ts",
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.logEntry",
@@ -9286,7 +9286,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merger.ts::aiMergeTask>mergeAttempt::store.logEntry::#5",
-      "callSiteFingerprint": "store.logEntry(taskId,`[timing] In-merge verification fix attempt ${fixAttempt} \u2014 verification still fails (${fixAttemptDurationMs}ms)`)",
+      "callSiteFingerprint": "store.logEntry(taskId,`[timing] In-merge verification fix attempt ${fixAttempt} — verification still fails (${fixAttemptDurationMs}ms)`)",
       "file": "packages/engine/src/merger.ts",
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.logEntry",
@@ -9326,7 +9326,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merger.ts::aiMergeTask>mergeAttempt::store.logEntry::#7",
-      "callSiteFingerprint": "store.logEntry(taskId,`Build verification failed during merge \u2014 attempting in-merge fix`)",
+      "callSiteFingerprint": "store.logEntry(taskId,`Build verification failed during merge — attempting in-merge fix`)",
       "file": "packages/engine/src/merger.ts",
       "enclosingSymbolPath": "aiMergeTask>mergeAttempt",
       "writer": "store.logEntry",
@@ -9502,7 +9502,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merger.ts::aiMergeTask>runLocalBaseRebase::store.appendAgentLog::#1",
-      "callSiteFingerprint": "store.appendAgentLog(taskId,`Pre-merge rebase: ${branch} \u2192 local HEAD ${localHead.slice(0, 8)}${label ? ` (${label})` : \"\"}`,\"status\",undefined,\"merger\")",
+      "callSiteFingerprint": "store.appendAgentLog(taskId,`Pre-merge rebase: ${branch} → local HEAD ${localHead.slice(0, 8)}${label ? ` (${label})` : \"\"}`,\"status\",undefined,\"merger\")",
       "file": "packages/engine/src/merger.ts",
       "enclosingSymbolPath": "aiMergeTask>runLocalBaseRebase",
       "writer": "store.appendAgentLog",
@@ -9662,7 +9662,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merger.ts::attemptInMergeVerificationFix::store.appendAgentLog::#2",
-      "callSiteFingerprint": "store.appendAgentLog(taskId,`Fix agent made no changes \u2014 skipping verification re-run`,\"status\",undefined,\"merger\")",
+      "callSiteFingerprint": "store.appendAgentLog(taskId,`Fix agent made no changes — skipping verification re-run`,\"status\",undefined,\"merger\")",
       "file": "packages/engine/src/merger.ts",
       "enclosingSymbolPath": "attemptInMergeVerificationFix",
       "writer": "store.appendAgentLog",
@@ -9682,7 +9682,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merger.ts::attemptInMergeVerificationFix::store.appendAgentLog::#3",
-      "callSiteFingerprint": "store.appendAgentLog(taskId,\"Out-of-scope verification failure detected \u2014 not retrying\",\"status\",undefined,\"merger\")",
+      "callSiteFingerprint": "store.appendAgentLog(taskId,\"Out-of-scope verification failure detected — not retrying\",\"status\",undefined,\"merger\")",
       "file": "packages/engine/src/merger.ts",
       "enclosingSymbolPath": "attemptInMergeVerificationFix",
       "writer": "store.appendAgentLog",
@@ -9762,7 +9762,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merger.ts::attemptInMergeVerificationFix::store.logEntry::#2",
-      "callSiteFingerprint": "store.logEntry(taskId,`In-merge fix agent made no changes \u2014 skipping verification re-run (attempt ${fixAttemptNumber ?? \"unknown\"})`)",
+      "callSiteFingerprint": "store.logEntry(taskId,`In-merge fix agent made no changes — skipping verification re-run (attempt ${fixAttemptNumber ?? \"unknown\"})`)",
       "file": "packages/engine/src/merger.ts",
       "enclosingSymbolPath": "attemptInMergeVerificationFix",
       "writer": "store.logEntry",
@@ -10098,7 +10098,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merger.ts::runAiAgentForCommit::store.logEntry::#1",
-      "callSiteFingerprint": "store.logEntry(taskId,\"Context limit reached during merge after auto-compaction \u2014 retrying with reduced prompt\")",
+      "callSiteFingerprint": "store.logEntry(taskId,\"Context limit reached during merge after auto-compaction — retrying with reduced prompt\")",
       "file": "packages/engine/src/merger.ts",
       "enclosingSymbolPath": "runAiAgentForCommit",
       "writer": "store.logEntry",
@@ -10494,7 +10494,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merger.ts::runDeterministicVerification::store.logEntry::#8",
-      "callSiteFingerprint": "store.logEntry(taskId,`Deterministic test verification failed (exit ${testResult.exitCode}) \u2014 see prior [verification] entry for truncated out,\"VerificationError\")",
+      "callSiteFingerprint": "store.logEntry(taskId,`Deterministic test verification failed (exit ${testResult.exitCode}) — see prior [verification] entry for truncated out,\"VerificationError\")",
       "file": "packages/engine/src/merger.ts",
       "enclosingSymbolPath": "runDeterministicVerification",
       "writer": "store.logEntry",
@@ -10514,7 +10514,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merger.ts::runDeterministicVerification::store.logEntry::#9",
-      "callSiteFingerprint": "store.logEntry(taskId,`Deterministic build verification failed (exit ${buildResult.exitCode}) \u2014 see prior [verification] entry for truncated o,\"VerificationError\")",
+      "callSiteFingerprint": "store.logEntry(taskId,`Deterministic build verification failed (exit ${buildResult.exitCode}) — see prior [verification] entry for truncated o,\"VerificationError\")",
       "file": "packages/engine/src/merger.ts",
       "enclosingSymbolPath": "runDeterministicVerification",
       "writer": "store.logEntry",
@@ -10752,7 +10752,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merger.ts::sweepAutostashOrphans::store.logEntry::#1",
-      "callSiteFingerprint": "store .logEntry(taskId,`Cleaned up ${subsumed.length} subsumed autostash orphan(s) \u2014 their content already on HEAD`,subsumed.map((o) => `${o.ref}@${o.sha.slice(0, 7)} (${o.label})`).join(\"\\n\"))",
+      "callSiteFingerprint": "store .logEntry(taskId,`Cleaned up ${subsumed.length} subsumed autostash orphan(s) — their content already on HEAD`,subsumed.map((o) => `${o.ref}@${o.sha.slice(0, 7)} (${o.label})`).join(\"\\n\"))",
       "file": "packages/engine/src/merger.ts",
       "enclosingSymbolPath": "sweepAutostashOrphans",
       "writer": "store.logEntry",
@@ -10772,7 +10772,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merger.ts::sweepAutostashOrphans::store.logEntry::#2",
-      "callSiteFingerprint": "store .logEntry(taskId,`${live.length} autostash orphan(s) still hold uncommitted dev work \u2014 recover manually`,live .map( (o) => `${o.ref}@${o.sha.slice(0, 7)} (${o.label})\\n recover: git stash apply ${o.sha}`, ) .join(\"\\n\\n\"))",
+      "callSiteFingerprint": "store .logEntry(taskId,`${live.length} autostash orphan(s) still hold uncommitted dev work — recover manually`,live .map( (o) => `${o.ref}@${o.sha.slice(0, 7)} (${o.label})\\n recover: git stash apply ${o.sha}`, ) .join(\"\\n\\n\"))",
       "file": "packages/engine/src/merger.ts",
       "enclosingSymbolPath": "sweepAutostashOrphans",
       "writer": "store.logEntry",
@@ -10830,7 +10830,7 @@
     },
     {
       "callSiteId": "packages/engine/src/merger.ts::tryEarlyEmptyOwnDiffFinalize::store.logEntry::#1",
-      "callSiteFingerprint": "store.logEntry(taskId,`Finalize blocked (no-commits incomplete-work guard): ${reason} \u2014 moving back to todo with progress preserved`,JSON.stringify({ doneCount: noCommitsFinalize.doneCount, incompleteCount: noCommitsFinalize.incompleteCount, branch, mer)",
+      "callSiteFingerprint": "store.logEntry(taskId,`Finalize blocked (no-commits incomplete-work guard): ${reason} — moving back to todo with progress preserved`,JSON.stringify({ doneCount: noCommitsFinalize.doneCount, incompleteCount: noCommitsFinalize.incompleteCount, branch, mer)",
       "file": "packages/engine/src/merger.ts",
       "enclosingSymbolPath": "tryEarlyEmptyOwnDiffFinalize",
       "writer": "store.logEntry",
@@ -11358,7 +11358,7 @@
     },
     {
       "callSiteId": "packages/engine/src/worktree/workspace-base-refresh.ts::refreshWorkspaceRepoWorktreeBases::store.logEntry::#1",
-      "callSiteFingerprint": "store.logEntry(task.id,`Workspace base refresh skipped [${repoRelPath}] (${result.kind}) \u2014 kept local base; the merge-time rebase will retry wi,result.detail,runContext)",
+      "callSiteFingerprint": "store.logEntry(task.id,`Workspace base refresh skipped [${repoRelPath}] (${result.kind}) — kept local base; the merge-time rebase will retry wi,result.detail,runContext)",
       "file": "packages/engine/src/worktree/workspace-base-refresh.ts",
       "enclosingSymbolPath": "refreshWorkspaceRepoWorktreeBases",
       "writer": "store.logEntry",
@@ -11918,7 +11918,7 @@
     },
     {
       "callSiteId": "packages/engine/src/worktree/worktree-acquisition.ts::acquireTaskWorktree>refreshExistingWorktree::store.logEntry::#2",
-      "callSiteFingerprint": "store.logEntry(task.id,`Worktree base refresh skipped (${refresh.kind}) \u2014 kept local base; the merge-time rebase will retry with conflict resol,refresh.detail,runContext)",
+      "callSiteFingerprint": "store.logEntry(task.id,`Worktree base refresh skipped (${refresh.kind}) — kept local base; the merge-time rebase will retry with conflict resol,refresh.detail,runContext)",
       "file": "packages/engine/src/worktree/worktree-acquisition.ts",
       "enclosingSymbolPath": "acquireTaskWorktree>refreshExistingWorktree",
       "writer": "store.logEntry",
