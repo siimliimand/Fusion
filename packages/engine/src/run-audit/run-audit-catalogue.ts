@@ -69,6 +69,11 @@ export const DELIVERY_PIPELINE_RUN_AUDIT_EVENTS_LITERALS = [
 
   "task:reclaim-phantom-executor-binding",
   "task:reconcile-orphaned-pending-step-results",
+  // FNXC:OrphanedWorkItems 2026-11-05-20:46 (FIX-3, SUBC-008 / KB-006): the
+  // `reconcile-orphaned-active-work-items` janitor pair — CAS-fenced `failed` rewrite of a dead
+  // run's active work item, plus the deduped no-action diagnostic when the task is live.
+  "task:reconcile-orphaned-work-item",
+  "task:reconcile-orphaned-work-item-no-action",
   "task:stale-review-callback-waived",
   "task:reconcile-unproven-review-approval",
   "task:reconcile-stale-duplicate-decision",
@@ -156,6 +161,10 @@ export const DELIVERY_PIPELINE_RUN_AUDIT_EVENT_NOTES: Readonly<Record<DeliveryPi
     "Self-healing proves an in-memory executor-active binding is stale and requeues the task.",
   "task:reconcile-orphaned-pending-step-results":
     "Self-healing rewrites orphaned 'pending' workflow-step results (no live session) to 'failed'.",
+  "task:reconcile-orphaned-work-item":
+    "Self-healing CAS-fences an active workflow work item to 'failed' when the canonical liveness triple proves its owning run dead (FIX-3/SUBC-008).",
+  "task:reconcile-orphaned-work-item-no-action":
+    "Deduped per (taskId, workItemId, reason) diagnostic when the liveness arm proves the task live; the row is untouched.",
   "task:stale-review-callback-waived":
     "Self-healing records a receipt-backed waiver for an eligible stale code-review callback.",
   "task:reconcile-unproven-review-approval":

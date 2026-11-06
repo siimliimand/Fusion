@@ -734,6 +734,18 @@ export type DatabaseMutationType =
   { taskId, column, orphanedCount, resultCount }.
   */
   | "task:reconcile-orphaned-pending-step-results"
+  /*
+  FNXC:OrphanedWorkItems 2026-11-05-20:46 (FIX-3, SUBC-008 / KB-006):
+  The `reconcile-orphaned-active-work-items` janitor (self-healing startup + periodic) fails active
+  workflow work items whose owning run is provably dead via the canonical liveness triple. The
+  rewrite event records the one CAS-fenced `failed` transition; the no-action variant is the
+  DEDUPED per (taskId, workItemId, reason) diagnostic emitted when the liveness arm proves the
+  task live and the row is deliberately untouched. Metadata is ids/enums-only:
+  { taskId, workItemId, kind, priorState, outcome? } / { taskId, workItemId, kind, priorState,
+  reason }.
+  */
+  | "task:reconcile-orphaned-work-item"
+  | "task:reconcile-orphaned-work-item-no-action"
   /** Receipt-backed automatic waiver of an orphaned required singular code-review callback. */
   | "task:stale-review-callback-waived"
   /**

@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import { ACTIVE_WORKFLOW_WORK_ITEM_STATES, type Settings, type Task, type TaskStore, type WorkflowWorkItem } from "@fusion/core";
 
 import { SelfHealingManager } from "../self-healing.js";
+import { resumeMissingPostMergeGate } from "../merge/post-merge-gate-reseed.js";
 import { activeSessionRegistry, executingTaskLock } from "../agents/active-session-registry.js";
 
 /*
@@ -261,5 +262,60 @@ describe("FIX-3: reconcile orphaned active workflow work items", () => {
     expect(orphan.state).toBe("running");
     expect(orphan.leaseOwner).toBe("fresh-dispatcher");
     expect(auditCalls(store)).not.toHaveBeenCalled();
+  });
+
+  /*
+  FNXC:OrphanedWorkItems 2026-11-05-20:39 (KB-006, SUBC-008 symptom acceptance):
+  This test is the symptom-based acceptance for FIX-3's operator contract: before the janitor runs,
+  the dead run's active merge item makes `resumeMissingPostMergeGate` refuse with the
+  "active-work-items" veto on every invocation — the indefinite SUBC-008 wedge that previously
+  needed operator SQL repair. After the sweep fails the dead run's item, the SAME reseed path
+  reseeds the missing post-merge gate with no operator intervention. All assertions are behavioral:
+  the refusal shape before, the item state after the sweep, and the resumed outcome after.
+  */
+  it("lifts the post-merge-gate reseed veto once the dead run's item is failed (SUBC-008 symptom)", async () => {
+    const orphan = workItem({ id: "wi-subc-8-orphan", kind: "merge", state: "runnable" });
+    const owner = task("SUBC-8", {
+      mergeDetails: { mergeConfirmed: true },
+      enabledWorkflowSteps: ["post-merge-verification"],
+      workflowStepResults: [],
+    } as Partial<Task>);
+    const store = storeFor([owner], [orphan]);
+    /*
+    Reseed-facing store surface, modeled on confirmed-merge-must-finalize.test.ts's
+    recoveryFixture. The seeder mirrors the real store seed's bail gate: refuse with
+    "active-continuation" exactly while an ACTIVE-state item exists (the same
+    ACTIVE_WORKFLOW_WORK_ITEM_STATES gate the real seed reads) — so a failed item lets the
+    seed proceed.
+    */
+    store.listWorkflowWorkItemsForTask = vi.fn(async () => [orphan]) as never;
+    store.seedWorkspaceCodeReviewContinuationIfIdle = vi.fn(async () => {
+      if (ACTIVE_WORKFLOW_WORK_ITEM_STATES.includes(orphan.state)) return { seeded: false, reason: "active-continuation" as const };
+      return { seeded: true, workItemId: "post-merge-continuation" };
+    }) as never;
+    const selection = { workflowId: "builtin:coding", stepIds: ["post-merge-verification"] };
+    store.getTaskWorkflowSelection = vi.fn(() => selection) as never;
+    store.getTaskWorkflowSelectionAsync = vi.fn(async () => selection) as never;
+    const manager = new SelfHealingManager(store, { rootDir: "/repo", isMergePending: async () => false });
+
+    // BEFORE: the dead run's active item vetoes the reseed — the indefinite SUBC-008 wedge.
+    await expect(resumeMissingPostMergeGate(store, "SUBC-8")).resolves.toEqual({
+      outcome: "not-resumable",
+      reason: "active-work-items",
+      workItem: { id: orphan.id, kind: "merge", state: "runnable" },
+    });
+
+    // The janitor proves the run dead and fails the item (row preserved as forensic evidence).
+    expect(await manager.reconcileOrphanedWorkItems()).toBe(1);
+    expect(orphan.state).toBe("failed");
+    expect(orphan.lastError).toBe("orphaned-by-dead-run");
+    expect(orphan.leaseOwner).toBeNull();
+    expect(orphan.blockedReason).toBeNull();
+
+    // AFTER: the same reseed path no longer carries the active-item veto — the gate reseeds.
+    await expect(resumeMissingPostMergeGate(store, "SUBC-8")).resolves.toEqual({
+      outcome: "resumed",
+      gateId: "post-merge-verification",
+    });
   });
 });
