@@ -206,6 +206,14 @@ guarantee the pane's commit, the entry-27 family on the stop seam. The identity'
 records (entry 10 and the archived lane-sharding sighting) predate FN-9117's structural fix, so per
 the entry-25 lineage precedent it is pinned active as a new first sighting with its follow-up
 settle-signal repair recorded, not applied; a second sighting executes the file-level quarantine.
+
+FNXC:TestFlakeRegister 2026-11-06-17:14:
+KB-029 landed entry 26's recorded helper swap: the reloaded-epoch it.each in the planning-flow
+file now dispatches its "Secure defaults" radio through the settle-and-requery helper under a
+fresh FNXC comment citing that entry, mirroring the entry-25 repair, with assertions unchanged.
+The pinned status text below records the landed repair while entry 26 stays active pending
+second-sighting escalation — a repeat failure of this identity still executes the file-level
+quarantine (ledger + package vitest exclude in one commit), never a new entry or an appeasement.
 */
 test("observed-flake register active count, escalation state, and owners stay synchronized", () => {
   const register = readFileSync(registerPath, "utf8");
@@ -250,7 +258,7 @@ test("observed-flake register active count, escalation state, and owners stay sy
     },
     {
       heading: "26. Planning Mode reloaded-epoch mobile Next-enablement timeout",
-      status: "Active first sighting — recorded 2026-11-06 by KB-024; deterministic follow-up repair identified but deliberately not landed in that task's scope, with a second sighting requiring file-level quarantine.",
+      status: "Active first sighting — recorded 2026-11-06 by KB-024; deterministic test repair landed by KB-029, with a second sighting requiring file-level quarantine.",
     },
     {
       heading: "27. Planning Mode loading-poll retry interval-registration race",

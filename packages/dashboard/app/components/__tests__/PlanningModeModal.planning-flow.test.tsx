@@ -1674,8 +1674,18 @@ describe("PlanningModeModal sequential flow", () => {
     const props = { isOpen: true, onClose: vi.fn(), onTaskCreated: vi.fn(), onTasksCreated: vi.fn(), tasks: mockTasks, projectId: "project-1" };
     const { rerender } = render(<PlanningModeModal {...props} resumeSessionId="session-a" />);
 
-    fireEvent.click(await screen.findByLabelText("Secure defaults"));
-    await clickEnabledPlanningButton("Next");
+    /*
+     * FNXC:PlanningTurnReconciliation 2026-11-06-17:13:
+     * The radio dispatch must use the settle-and-requery helper: initial resume hydration can
+     * replace the captured answer control between query and dispatch, and a click on the stale
+     * node never reaches React, leaving Next permanently disabled. Observed once in a local
+     * full-file run at 885fc268ed0 (first sighting recorded as observed-flake register entry 26
+     * by KB-024; the identical unprotected-dispatch mechanism CI registered as entry 25). The
+     * helper flushes pending hydration, re-queries the live control, dispatches, and awaits the
+     * enabled Next, so both desktop and mobile variants exercise the production submit path a
+     * real user gets — the same repair KB-024 landed for entry 25 in this file.
+     */
+    await selectResponseAfterHydration("Secure defaults");
     await waitFor(() => expect(mockRespondToPlanning).toHaveBeenCalledTimes(1));
     rerender(<PlanningModeModal {...props} resumeSessionId="session-b" />);
     expect(await screen.findByText("What did session B ask?")).toBeInTheDocument();
