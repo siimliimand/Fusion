@@ -2154,8 +2154,19 @@ describe("PlanningModeModal sequential flow", () => {
     Stop restores plan review after its best-effort request settles. Flush that request and find the
     restored workspace before selecting Refine, because its former loading-pane button can remount
     during the same event turn and cannot represent a user action.
+
+    FNXC:PlanningTestReadiness 2026-11-06-17:34:
+    The stop request-call waitFor does not guarantee the planning-plan-review commit: handleStopGeneration
+    awaits the request (PlanningModeModal.tsx:3010) and only then batches its state resets and the
+    session-restore branch before the pane at 4161 renders, so on a starved event loop the finder below
+    could start on an uncommitted pane (register entry 28,
+    docs/solutions/test-failures/suite-only-flakes-observed-register.md). The resolved stop mock from the
+    global beforeEach (mockStopPlanningGeneration.mockResolvedValue({ success: true })) is flushed through
+    the file's act-settle pattern so the finder starts on a committed pane; same assertion strength, no
+    timeout widening, retries, or skip.
     */
     await waitFor(() => expect(mockStopPlanningGeneration).toHaveBeenCalledWith("session-1", "project-1"));
+    await act(async () => {});
     await screen.findByTestId("planning-plan-review");
     fireEvent.click(await screen.findByRole("button", { name: "Refine" }));
     fireEvent.change(screen.getByLabelText("Refinement instructions"), { target: { value: "Focus the next questions on rollout." } });

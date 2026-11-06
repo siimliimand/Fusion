@@ -266,7 +266,7 @@ test("observed-flake register active count, escalation state, and owners stay sy
     },
     {
       heading: "28. Planning Mode post-Stop plan-review restore settle timeout",
-      status: "Active first sighting — recorded 2026-11-06 by KB-024 review; deterministic settle-signal repair identified but deliberately not landed (the subject is fenced from that task's scope), with a second sighting requiring file-level quarantine.",
+      status: "Active first sighting — recorded 2026-11-06 by KB-024 review; deterministic test repair landed, with a second sighting requiring file-level quarantine.",
     },
   ]);
 });
