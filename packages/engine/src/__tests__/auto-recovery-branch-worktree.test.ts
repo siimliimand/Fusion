@@ -63,7 +63,21 @@ function createFixtures(taskOverrides: Record<string, unknown> = {}, mode = "pro
   const handler = new BranchWorktreeAutoRecoveryHandler({ taskStore, runAudit, logger, reserveFreshBranch, spawnAiRecoverySession });
   const failure: AutoRecoveryFailure = { class: "branch-conflict-unrecoverable", taskId: task.id, pausedReason: "branch-conflict-unrecoverable", evidence: {} };
   const decision: AutoRecoveryDecision = { action: "retry", rationale: "mode", legacyPausedReason: "branch-conflict-unrecoverable", auditMetadata: { mode } };
-  const ctx: AutoRecoveryContext = { task, retryCount: 0, settings: { mode: "programmatic", maxRetries: 3 } as any };
+  const ctx: AutoRecoveryContext = {
+    task,
+    retryCount: 0,
+    /*
+    FNXC:AutoRecoveryFixtureDeterminism 2026-11-06-16:24:
+    KB-022 dispatched a Full Suite run on a task branch and these fixtures failed on CI:
+    resolveIntegrationBranch reads refs/remotes/origin/HEAD when no explicit setting exists, and
+    actions/checkout of a branch ref points origin/HEAD at the dispatched branch, so the handler
+    resolved "fusion/kb-022" where the fixture expected "main". Push-to-main checkouts masked the
+    ambient dependency (origin/HEAD pointed at main there). Per FN-183 precedence the explicit
+    project setting is authoritative and wins before any git read, so the fixture now states the
+    integration branch it always meant instead of inheriting whatever the runner checked out.
+    */
+    settings: { mode: "programmatic", maxRetries: 3, integrationBranch: "main" } as any,
+  };
   return { taskStore, runAudit, logger, reserveFreshBranch, spawnAiRecoverySession, handler, failure, decision, ctx };
 }
 

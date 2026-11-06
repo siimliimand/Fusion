@@ -19,7 +19,7 @@ tags:
 
 # Observed suite-only flakes register
 
-This register has **7 active observation records** (entries 2, 13, 20, 21, 22, 23, and 24), plus the separately maintained active CLI dispatcher timeout below; all are **active first sightings**. Entries 1, 15, and 18 closed after structural fixes with recorded verification, and stay in place below for campaign and first-sighting evidence. Entries 7 and 14 below are closed and retained for cross-reference only. It also has **1 merge-gate eviction record** (entry 6) and **12 archived closed records**. Only the active section drives quarantine and escalation decisions; the other sections preserve historical evidence.
+This register has **7 active observation records** (entries 2, 13, 20, 21, 22, 23, and 25), plus the separately maintained active CLI dispatcher timeout below; all are **active first sightings**. Entries 1, 15, 18, and 24 closed after structural fixes or second-sighting quarantines with recorded verification, and stay in place below for campaign and first-sighting evidence. Entries 7 and 14 below are closed and retained for cross-reference only. It also has **1 merge-gate eviction record** (entry 6) and **12 archived closed records**. Only the active section drives quarantine and escalation decisions; the other sections preserve historical evidence.
 
 <!--
 FNXC:TestFlakeRegister 2026-08-19-11:14:
@@ -337,7 +337,7 @@ Production tracing found separate synchronous rebuild and server-log follow refs
 
 ### 24. Dashboard TUI concurrency live-settings callback drive timeout
 
-- **Status:** CLOSED 2026-11-06 — quarantined on the second sighting by KB-013 (file-level quarantine in `scripts/lib/test-quarantine.json` + `packages/cli/vitest.config.ts`, deletion ratchet). First sighting recorded 2026-11-06 by KB-003.
+- **Status:** Closed 2026-11-06 — quarantined on the second sighting by KB-013 (file-level quarantine in `scripts/lib/test-quarantine.json` + `packages/cli/vitest.config.ts`, deletion ratchet). First sighting recorded 2026-11-06 by KB-003.
 - **File:** `packages/cli/src/commands/__tests__/dashboard-concurrency-settings.test.ts`
 - **Exact test:** `dashboard TUI concurrency settings > drives %s live settings through every runDashboard TUI callback` (it.each template; the observed failing variant was the `unset` case, rendered as `drives unset live settings through every runDashboard TUI callback`)
 - **Observed tree/SHA:** `587c9ef69573955653a4b2cd44131973cae6eeaf` (branch `fusion/kb-003`), observed 2026-11-06 UTC in a local task-session run (no CI artifact).
@@ -346,6 +346,16 @@ Production tracing found separate synchronous rebuild and server-log follow refs
 - **Investigation:** No causal mechanism from the concurrently landing KB-003 diff was found: the change wires `sdNotifyReady()`/`startSdWatchdog()` into the dashboard listening handler, and with `NOTIFY_SOCKET` unset (always true in tests) both are synchronous early-return no-ops — no child process, no timer, no I/O (covered by `sd-notify.test.ts` scenario 1). The suspected mechanism is the register's established wall-clock overrun mode: a 5s `testTimeout` under CPU-starved parallel workers, consistent with the CLI dispatcher cold-import and PostgreSQL setup-hook entries. No timeout, retry, skip, exclusion, or assertion was changed. A second sighting requires a same-change file-level quarantine in `scripts/lib/test-quarantine.json` under the deletion ratchet.
 
 **Second sighting (2026-11-06, KB-013, tree `f1eefaad37db8ef264c2f1ff85d163ea3bbd2b88`, branch `fusion/kb-013`, local task-session run — no CI artifact):** the same identity (`drives unset live settings through every runDashboard TUI callback`) failed with the same `Error: Test timed out in 5000ms` at the same `dashboard-concurrency-settings.test.ts:213:13` in the workspace changed-only lane under full parallel load, again the only failed identity in the packages/cli project (1 failed / 227 passed). Evidence pattern identical to the first sighting: the focused file re-run passed (exit 0, 50.7s wall) immediately afterward. The concurrently landing KB-013 diff (STOPPING=1 wiring + `$WATCHDOG_USEC` interval derivation) has the same no-causal-mechanism property as KB-003's — `sdNotifyStopping()` is a synchronous early-return no-op without `NOTIFY_SOCKET`, and `runDashboard`'s TUI callback path is untouched. Per the pre-committed escalation above, KB-013 quarantined the file in the same change (ledger + vitest exclude, lockstep), closing this register entry; the 14-day deletion clock runs from `quarantinedAt: 2026-11-06`.
+
+### 25. Planning Mode loading-poll auto-retry registration observation
+
+- **Status:** Active first sighting — recorded 2026-11-06 by KB-022; no quarantine.
+- **File:** `packages/dashboard/app/components/__tests__/PlanningModeModal.planning-flow.test.tsx`
+- **Exact test:** `PlanningModeModal sequential flow > automatically retries a resumed error discovered by the loading poll`
+- **Observed tree/SHA:** `643d93e1f173a906a5fd80d41d76d5db804b144b` (branch `fusion/kb-022`), GitHub-hosted Full Suite run `42242393040` (workflow_dispatch), job `Test shard 3/4` (id `127975748959`), dashboard lane `test:quality:app:backfill-3` (vitest shard 3/4), observed 2026-11-06 UTC.
+- **Reproduction:** loaded 176-file lane only. `AssertionError: expected undefined to be type of 'function'` at `PlanningModeModal.planning-flow.test.tsx:438:18` — `intervalSpy.mock.calls.find(([, delay]) => delay === …)` returned undefined, i.e. the expected loading-poll `setInterval` registration was not among the spy's observed calls at assertion time. Lane result 1 failed | 6016 passed, duration 246.58s.
+- **Evidence (non-reproduction data):** the same lane ran this file green earlier the same day — run `42188377004` (tree `eed0ab445`, whose lane failure was register entry 8's identity) and run `42207770829` (tree `bff4de6f9`, shard 2 lane, whose only failure was the then-unfixed settings guard). The test file is unchanged since 2026-10-17 (FN-9565), so the observation is not diff-correlated. Focused file runs pass locally.
+- **Investigation:** FN-9116 touched the loading-poll error path (recovery turn claimed before auto-retry) but landed well before all three runs. The failing line is a scheduling-window spy lookup: under loaded-lane CPU oversubscription the poll's registration fell outside the window the assertion observes; no product assertion evaluated afterward. No timeout, retry, skip, exclusion, or assertion was changed. A second sighting requires a same-change file-level quarantine per the deletion ratchet.
 
 ### Common shape and investigated result
 

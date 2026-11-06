@@ -177,6 +177,15 @@ it.each drive under full parallel workspace changed-only load, with the focused 
 changed-only lane both passing at the same SHA. The in-flight sd_notify wiring is a synchronous
 no-op without NOTIFY_SOCKET, so no causal mechanism was found; pin it as active so a second
 sighting requires the deletion-ratchet quarantine instead of a silent ignore or timeout widening.
+Entry 24 was closed on its second sighting by KB-013's same-change file-level quarantine; the
+register intro and this list were synchronized by KB-022.
+
+FNXC:PlanningModeLoadingPollRetry 2026-11-06-17:12:
+KB-022 records entry 25: a CI-hosted Full Suite loaded-lane sighting of the Planning Mode
+loading-poll auto-retry test (assertion-time setInterval spy lookup returned no matching call at
+PlanningModeModal.planning-flow.test.tsx:438) in run 42242393040 shard 3, while the same lane ran
+the file green twice earlier the same day and the file is unchanged since 2026-10-17. Pin it as
+active so a second sighting requires the file-level quarantine instead of appeasement.
 */
 test("observed-flake register active count, escalation state, and owners stay synchronized", () => {
   const register = readFileSync(registerPath, "utf8");
@@ -216,8 +225,8 @@ test("observed-flake register active count, escalation state, and owners stay sy
       status: "Active first sighting — recorded 2026-10-23 by FN-9573; no quarantine.",
     },
     {
-      heading: "24. Dashboard TUI concurrency live-settings callback drive timeout",
-      status: "Active first sighting — recorded 2026-11-06 by KB-003; no quarantine.",
+      heading: "25. Planning Mode loading-poll auto-retry registration observation",
+      status: "Active first sighting — recorded 2026-11-06 by KB-022; no quarantine.",
     },
   ]);
 });
