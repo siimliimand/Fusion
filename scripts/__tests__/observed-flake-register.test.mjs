@@ -170,6 +170,13 @@ FNXC:SystemControlsScrollFlake 2026-10-23-09:39:
 FN-9573 records a dashboard shard-only manual-scroll observation after both the exact historical
 backfill lane and focused file passed at the reported SHA. Pin it as active so a second sighting
 requires the deletion-ratchet quarantine instead of silently discarding the scroll invariant.
+
+FNXC:SdNotifyWatchdog 2026-11-05-23:59:
+KB-003 records entry 24: a single 5s testTimeout overrun of the dashboard-concurrency-settings
+it.each drive under full parallel workspace changed-only load, with the focused file and the exact
+changed-only lane both passing at the same SHA. The in-flight sd_notify wiring is a synchronous
+no-op without NOTIFY_SOCKET, so no causal mechanism was found; pin it as active so a second
+sighting requires the deletion-ratchet quarantine instead of a silent ignore or timeout widening.
 */
 test("observed-flake register active count, escalation state, and owners stay synchronized", () => {
   const register = readFileSync(registerPath, "utf8");
@@ -207,6 +214,10 @@ test("observed-flake register active count, escalation state, and owners stay sy
     {
       heading: "23. System Controls rebuild-tail manual-scroll preservation",
       status: "Active first sighting — recorded 2026-10-23 by FN-9573; no quarantine.",
+    },
+    {
+      heading: "24. Dashboard TUI concurrency live-settings callback drive timeout",
+      status: "Active first sighting — recorded 2026-11-06 by KB-003; no quarantine.",
     },
   ]);
 });

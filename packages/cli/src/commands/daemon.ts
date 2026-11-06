@@ -84,6 +84,7 @@ import { ensureBundledCursorRuntimePluginInstalled, ensureBundledDependencyGraph
 import { handleOpencodeGoApiKeySaved, syncStartupModels } from "./startup-model-sync.js";
 import { registerCustomProviders, reregisterCustomProviders } from "./custom-provider-registry.js";
 import { ensureCwdProjectRegistered } from "./ensure-project-registered.js";
+import { sdNotifyReady, startSdWatchdog } from "../sd-notify.js";
 
 const DIAGNOSTIC_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 let daemonStartTime = 0;
@@ -992,6 +993,16 @@ export async function runDaemon(opts: DaemonOptions = {}) {
     server.once("listening", resolve);
     server.once("error", reject);
   });
+
+  /*
+  FNXC:SdNotifyWatchdog 2026-11-05-22:35:
+  READY=1 + watchdog heartbeat strictly after this real server is listening.
+  Complete no-ops unless NOTIFY_SOCKET is set; the pre-boot migration holding
+  server never notifies (a Type=notify start job blocks until READY, so an
+  earlier send would wed start-up).
+  */
+  sdNotifyReady();
+  startSdWatchdog();
 
   const actualPort = (server.address() as AddressInfo).port;
 

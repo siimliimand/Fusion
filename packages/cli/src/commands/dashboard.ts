@@ -132,6 +132,7 @@ import {
 } from "./task-lifecycle.js";
 import { promptForPort } from "./port-prompt.js";
 import { startMigrationHoldingServer } from "./migration-holding-server.js";
+import { sdNotifyReady, startSdWatchdog } from "../sd-notify.js";
 import { ensureCwdProjectRegistered } from "./ensure-project-registered.js";
 import { createReadOnlyProviderSettingsView } from "./provider-settings.js";
 import { wrapAuthStorageWithApiKeyProviders } from "./provider-auth.js";
@@ -3088,6 +3089,18 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
   });
 
   server.on("listening", async () => {
+    /*
+    FNXC:SdNotifyWatchdog 2026-11-05-22:35:
+    Tell systemd READY=1 now that THIS real server is listening, then arm the
+    30s watchdog heartbeat. Both calls are complete no-ops unless NOTIFY_SOCKET
+    is set (dev/desktop/tests/containers). The pre-boot migration holding server
+    never notifies: READY strictly after the real bind is required because a
+    Type=notify start job blocks until READY, so an earlier send would wed
+    start-up. The EADDRINUSE rebind re-fires "listening" — a duplicate READY is
+    harmless to systemd and startSdWatchdog stays single-instance.
+    */
+    sdNotifyReady();
+    startSdWatchdog();
     const actualPort = (server.address() as AddressInfo).port;
 
     /*

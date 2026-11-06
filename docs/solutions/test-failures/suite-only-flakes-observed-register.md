@@ -19,7 +19,7 @@ tags:
 
 # Observed suite-only flakes register
 
-This register has **6 active observation records** (entries 2, 13, 20, 21, 22, and 23), plus the separately maintained active CLI dispatcher timeout below; all are **active first sightings**. Entries 1, 15, and 18 closed after structural fixes with recorded verification, and stay in place below for campaign and first-sighting evidence. Entries 7 and 14 below are closed and retained for cross-reference only. It also has **1 merge-gate eviction record** (entry 6) and **12 archived closed records**. Only the active section drives quarantine and escalation decisions; the other sections preserve historical evidence.
+This register has **7 active observation records** (entries 2, 13, 20, 21, 22, 23, and 24), plus the separately maintained active CLI dispatcher timeout below; all are **active first sightings**. Entries 1, 15, and 18 closed after structural fixes with recorded verification, and stay in place below for campaign and first-sighting evidence. Entries 7 and 14 below are closed and retained for cross-reference only. It also has **1 merge-gate eviction record** (entry 6) and **12 archived closed records**. Only the active section drives quarantine and escalation decisions; the other sections preserve historical evidence.
 
 <!--
 FNXC:TestFlakeRegister 2026-08-19-11:14:
@@ -334,6 +334,16 @@ FN-9551 ran the unchanged focused engine-pipeline-smoke Coding S17 file successf
 The hosted job exposes only a generic process-failure annotation; GitHub restricts the downloadable log, so its expected/received scroll values are unavailable. FN-9573 reran the subject file first and then `pnpm --filter @fusion/dashboard run test:quality:app:backfill-1` at the reported SHA; both passed. The focused check proves the reachable ordering: an SSE line, synchronous manual unpin at scroll position 100, geometry growth, a second SSE line that retains 100, then a near-bottom re-pin and a third line that follows the new 700-pixel bottom. The equivalent server-log path passes too.
 
 Production tracing found separate synchronous rebuild and server-log follow refs, with their respective line-effects as the only auto-follow writers. Job hydration, adoption, reconnect reconciliation, duplicate suppression, cap handling, and terminal handling do not reset an ordinary manually unpinned line tail. No product or fixture defect was reproduced, no timeout/retry/skip/assertion weakening was made, and FN-9570's engine MCP ledger-only files do not overlap this dashboard surface. This high-value multi-case file remains active rather than quarantined. A second sighting requires a same-change file-level quarantine in `scripts/lib/test-quarantine.json` and `quarantinedDashboardTests` under the deletion ratchet.
+
+### 24. Dashboard TUI concurrency live-settings callback drive timeout
+
+- **Status:** Active first sighting — recorded 2026-11-06 by KB-003; no quarantine.
+- **File:** `packages/cli/src/commands/__tests__/dashboard-concurrency-settings.test.ts`
+- **Exact test:** `dashboard TUI concurrency settings > drives %s live settings through every runDashboard TUI callback` (it.each template; the observed failing variant was the `unset` case, rendered as `drives unset live settings through every runDashboard TUI callback`)
+- **Observed tree/SHA:** `587c9ef69573955653a4b2cd44131973cae6eeaf` (branch `fusion/kb-003`), observed 2026-11-06 UTC in a local task-session run (no CI artifact).
+- **Reproduction:** workspace `pnpm test` (changed-only lane vs base `b7e1a0f28a7c8f3331d5d72f307d74b16e7d5a4e`) under full parallel load; the packages/cli changed-only vitest lane reported `Error: Test timed out in 5000ms` at `dashboard-concurrency-settings.test.ts:213:13`, the only failed identity (1 failed / 220 passed in that project). The same run's dashboard project showed 80.8s aggregate import time against ~5.9s of test time, indicating heavy CPU oversubscription across concurrently running projects.
+- **Evidence:** focused file re-run at the same SHA passed (4/4, 52.2s wall); the exact changed-only lane re-run passed (exit 0, 52.5s). An earlier attempt at the same command was SIGKILLed by the verification tool's soft-cap before reaching this file and produced no test failure.
+- **Investigation:** No causal mechanism from the concurrently landing KB-003 diff was found: the change wires `sdNotifyReady()`/`startSdWatchdog()` into the dashboard listening handler, and with `NOTIFY_SOCKET` unset (always true in tests) both are synchronous early-return no-ops — no child process, no timer, no I/O (covered by `sd-notify.test.ts` scenario 1). The suspected mechanism is the register's established wall-clock overrun mode: a 5s `testTimeout` under CPU-starved parallel workers, consistent with the CLI dispatcher cold-import and PostgreSQL setup-hook entries. No timeout, retry, skip, exclusion, or assertion was changed. A second sighting requires a same-change file-level quarantine in `scripts/lib/test-quarantine.json` under the deletion ratchet.
 
 ### Common shape and investigated result
 
