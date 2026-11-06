@@ -177,6 +177,35 @@ it.each drive under full parallel workspace changed-only load, with the focused 
 changed-only lane both passing at the same SHA. The in-flight sd_notify wiring is a synchronous
 no-op without NOTIFY_SOCKET, so no causal mechanism was found; pin it as active so a second
 sighting requires the deletion-ratchet quarantine instead of a silent ignore or timeout widening.
+
+FNXC:TestFlakeRegister 2026-11-06-12:15:
+KB-013 closed entry 24 on its second sighting (dashboard-concurrency-settings.test.ts file-level
+quarantine, deletion ratchet) but landed only the register record: the pinned inventory below still
+listed entry 24 as active and its all-caps "CLOSED" status did not match the case-sensitive
+"Closed" prefix this inventory's filter excludes, leaving the count check red until KB-024 synced
+it. The register's own closed-in-place convention is sentence case, so entry 24's status is now
+"Closed ..." and its pin is removed; KB-024 records entry 25, a Planning Mode duplicate-response
+dispatch that fired at a hydration-replaced radio node under full-suite CI load, and pins it active
+with its deterministic test repair — a second sighting requires the file-level quarantine, never a
+timeout widening or retry.
+
+FNXC:TestFlakeRegister 2026-11-06-14:47:
+KB-024's Step 6 full-file verification run on the replayed worktree produced two live local first
+sightings in the same planning-flow file, recorded as entries 26 and 27: the reloaded-epoch it.each
+mobile variant (the still-unprotected line-1677 dispatch, the identical entry 25 mechanism observed
+locally, with its helper swap recorded as follow-up hardening because the task scope fences that
+test) and the loading-poll retry test (an interval-registration race: the spy can be asserted before
+any loading-window registration exists). Both pass focused and on full-file rerun; the inventory
+pins them active so a second sighting of either test executes the deletion-ratchet quarantine.
+
+FNXC:TestFlakeRegister 2026-11-06-15:47:
+KB-024's review-lane repetition surfaced a fourth planning-flow sighting at the delivery HEAD
+(cf18ec0976c8547eaf9b592ced6e0e5713a2a356): the post-Stop refine case timed out its
+planning-plan-review finder after the stop-request waitFor had passed — the wait condition does not
+guarantee the pane's commit, the entry-27 family on the stop seam. The identity's closed prior
+records (entry 10 and the archived lane-sharding sighting) predate FN-9117's structural fix, so per
+the entry-25 lineage precedent it is pinned active as a new first sighting with its follow-up
+settle-signal repair recorded, not applied; a second sighting executes the file-level quarantine.
 */
 test("observed-flake register active count, escalation state, and owners stay synchronized", () => {
   const register = readFileSync(registerPath, "utf8");
@@ -216,8 +245,20 @@ test("observed-flake register active count, escalation state, and owners stay sy
       status: "Active first sighting — recorded 2026-10-23 by FN-9573; no quarantine.",
     },
     {
-      heading: "24. Dashboard TUI concurrency live-settings callback drive timeout",
-      status: "Active first sighting — recorded 2026-11-06 by KB-003; no quarantine.",
+      heading: "25. Planning Mode duplicate-response desktop Next-enablement timeout",
+      status: "Active first sighting — recorded 2026-11-06 by KB-024; deterministic test repair landed, with a second sighting requiring file-level quarantine.",
+    },
+    {
+      heading: "26. Planning Mode reloaded-epoch mobile Next-enablement timeout",
+      status: "Active first sighting — recorded 2026-11-06 by KB-024; deterministic follow-up repair identified but deliberately not landed in that task's scope, with a second sighting requiring file-level quarantine.",
+    },
+    {
+      heading: "27. Planning Mode loading-poll retry interval-registration race",
+      status: "Active first sighting — recorded 2026-11-06 by KB-024; no repair landed, with a second sighting requiring file-level quarantine.",
+    },
+    {
+      heading: "28. Planning Mode post-Stop plan-review restore settle timeout",
+      status: "Active first sighting — recorded 2026-11-06 by KB-024 review; deterministic settle-signal repair identified but deliberately not landed (the subject is fenced from that task's scope), with a second sighting requiring file-level quarantine.",
     },
   ]);
 });

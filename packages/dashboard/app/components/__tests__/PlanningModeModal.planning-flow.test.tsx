@@ -1376,13 +1376,17 @@ describe("PlanningModeModal sequential flow", () => {
     });
 
     renderSession();
-    fireEvent.click(await screen.findByLabelText("Secure defaults"));
     /*
-     * FNXC:PlanningTurnReconciliation 2026-10-05-15:57:
-     * The production action submits only after the selected answer commits and enables Next.
-     * Await that observable readiness so a loaded dashboard lane cannot click the prior disabled form.
+     * FNXC:PlanningTurnReconciliation 2026-11-06-12:13:
+     * The radio dispatch must use the settle-and-requery helper: resume hydration can replace the
+     * captured answer control between query and dispatch, and a click on the stale node never
+     * reaches React, leaving Next permanently disabled. Observed once under full-suite CI load
+     * (Test shard 3/4 of run 42188377004, first sighting recorded as observed-flake register
+     * entry 25 by KB-024 with a deterministic test-side repair). The helper flushes pending
+     * hydration, re-queries the live control, dispatches, and awaits the enabled Next, so all
+     * four viewport x status variants exercise the production submit path a real user gets.
      */
-    await clickEnabledPlanningButton("Next");
+    await selectResponseAfterHydration("Secure defaults");
     await waitFor(() => expect(mockRespondToPlanning).toHaveBeenCalledTimes(1));
 
     if (status === "awaiting_input") {
