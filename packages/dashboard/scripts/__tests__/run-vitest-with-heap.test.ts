@@ -4,8 +4,13 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import {
+  buildNodeEnv,
+  parseWrapperArgs,
+  resolveSpawnCommand,
+} from "../run-vitest-with-heap.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dashboardRoot = join(__dirname, "..", "..");
@@ -228,6 +233,87 @@ afterEach(async () => {
     rmSync(tempDir, { recursive: true, force: true });
   }
   tempDirs.clear();
+});
+
+/*
+FNXC:DashboardVitestHeapWrapper 2026-11-06-11:56:
+KB-022 pins the de-nested default spawn resolution: direct process.execPath +
+dashboard-local vitest entry (no nested `pnpm exec vitest`), heap-derived
+NODE_OPTIONS, and an unchanged override seam. The reaping tests above keep
+using the seam; these unit tests pin the resolution itself so a regression
+back to a package-manager hop cannot re-introduce the only unique CI hop in
+the dashboard lane chain.
+*/
+describe("run-vitest-with-heap spawn resolution", () => {
+  it("defaults to direct node + dashboard-local vitest entry, forwarding all vitest args", () => {
+    const { command, args } = resolveSpawnCommand({
+      vitestArgs: ["run", "--project", "dashboard-app-quality-backfill", "--silent=passed-only", "--reporter=dot", "--shard=1/4"],
+    });
+
+    expect(command).toBe(process.execPath);
+    expect(command).not.toContain("pnpm");
+    const entryUrl = pathToFileURL(join(dashboardRoot, "node_modules", "vitest", "vitest.mjs")).href;
+    expect(args[0]).toBe(entryUrl);
+    expect(args.slice(1)).toEqual([
+      "run",
+      "--project",
+      "dashboard-app-quality-backfill",
+      "--silent=passed-only",
+      "--reporter=dot",
+      "--shard=1/4",
+    ]);
+    expect(args.join(" ")).not.toContain("pnpm");
+  });
+
+  it("fails loudly with an install hint when the vitest entry is missing", () => {
+    const emptyRoot = mkdtempSync(join(tmpdir(), "fusion-run-vitest-missing-entry-"));
+    tempDirs.add(emptyRoot);
+    expect(() =>
+      resolveSpawnCommand({ vitestArgs: ["run"], dashboardRoot: emptyRoot }),
+    ).toThrowError(/vitest entry not found/);
+    expect(() =>
+      resolveSpawnCommand({ vitestArgs: ["run"], dashboardRoot: emptyRoot }),
+    ).toThrowError(/pnpm install/);
+  });
+
+  it("preserves the spawn-override seam contract", () => {
+    const override = { command: "/bin/echo", args: ["hello"] };
+    const resolved = resolveSpawnCommand({
+      vitestArgs: ["run"],
+      env: { ...process.env, FUSION_RUN_VITEST_SPAWN_OVERRIDE: JSON.stringify(override) },
+    });
+    expect(resolved).toEqual({ command: "/bin/echo", args: ["hello"] });
+
+    // Malformed JSON fails at parse time (SyntaxError) before shape validation.
+    expect(() =>
+      resolveSpawnCommand({
+        vitestArgs: ["run"],
+        env: { ...process.env, FUSION_RUN_VITEST_SPAWN_OVERRIDE: "{not json}" },
+      }),
+    ).toThrowError(SyntaxError);
+
+    // Valid JSON with the wrong shape fails the seam contract.
+    expect(() =>
+      resolveSpawnCommand({
+        vitestArgs: ["run"],
+        env: { ...process.env, FUSION_RUN_VITEST_SPAWN_OVERRIDE: JSON.stringify({ command: 42, args: [] }) },
+      }),
+    ).toThrowError(/FUSION_RUN_VITEST_SPAWN_OVERRIDE must be valid JSON/);
+  });
+
+  it("parses heap flag out of forwarded args and defaults to 6144", () => {
+    expect(parseWrapperArgs(["node", "run-vitest-with-heap.mjs", "--heap=6144", "run", "--project", "x"]))
+      .toEqual({ heapMb: "6144", vitestArgs: ["run", "--project", "x"] });
+    expect(parseWrapperArgs(["node", "run-vitest-with-heap.mjs", "run"]))
+      .toEqual({ heapMb: "6144", vitestArgs: ["run"] });
+  });
+
+  it("builds heap-derived NODE_OPTIONS and preserves pre-existing entries", () => {
+    const env = buildNodeEnv({ heapMb: "6144", env: { NODE_OPTIONS: "--trace-warnings" } });
+    expect(env.NODE_OPTIONS).toContain("--max-old-space-size=6144");
+    expect(env.NODE_OPTIONS).toContain("--trace-warnings");
+    expect(buildNodeEnv({ heapMb: "4096", env: {} }).NODE_OPTIONS).toBe("--max-old-space-size=4096");
+  });
 });
 
 describe("run-vitest-with-heap", () => {

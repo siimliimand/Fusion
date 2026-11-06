@@ -813,6 +813,75 @@ describe("AgentLogger", () => {
     });
   });
 
+  /*
+  FNXC:AgentLoggerSinkContainment 2026-11-06-11:56:
+  KB-022 regression coverage: flushPendingEntries is fired fire-and-forget from
+  writeEntry, so it must never reject — a synchronous throw inside it becomes an
+  unhandled process rejection that flips a fully green vitest run to exit 1
+  (observed as `Errors 4 errors` on every early Full Suite CI run). Both escape
+  routes are pinned here: a store missing the appendAgentLog sink degrades to a
+  warn (mirroring the batch branch's typeof guard), and a sink that throws
+  synchronously when called is converted into a contained rejection.
+  */
+  describe("partial store sink containment (KB-022)", () => {
+    function trackUnhandledRejections(): { rejections: unknown[]; done: () => void } {
+      const rejections: unknown[] = [];
+      const onUnhandled = (reason: unknown) => {
+        rejections.push(reason);
+      };
+      process.on("unhandledRejection", onUnhandled);
+      return {
+        rejections,
+        done: () => {
+          process.off("unhandledRejection", onUnhandled);
+        },
+      };
+    }
+
+    it("degrades a store with no appendAgentLog sink to a warning, not an unhandled rejection", async () => {
+      // Exactly the review-convergence-escalation harness shape: a partial
+      // store mock exposing neither appendAgentLog nor appendAgentLogBatch.
+      const store = { updateTask: vi.fn(async () => ({})) } as unknown as TaskStore;
+      const appendLogCb = vi.fn(async () => {});
+      const logger = new AgentLogger({ store, taskId: "FN-NO-SINK", appendLog: appendLogCb });
+      const tracked = trackUnhandledRejections();
+
+      logger.onToolEnd("Bash", false);
+      await vi.advanceTimersByTimeAsync(0);
+      await logger.flush();
+      // Let any detached (void-ed) rejection surface on the process channel.
+      await vi.advanceTimersByTimeAsync(0);
+
+      tracked.done();
+      expect(tracked.rejections).toEqual([]);
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("exposes no appendAgentLog/appendAgentLogBatch sink"),
+      );
+      expect(appendLogCb).toHaveBeenCalled();
+    });
+
+    it("contains a sink that throws synchronously when called", async () => {
+      const store = {
+        appendAgentLog: vi.fn(() => {
+          throw new Error("sync sink boom");
+        }),
+      } as unknown as TaskStore;
+      const logger = new AgentLogger({ store, taskId: "FN-SYNC-BOOM" });
+      const tracked = trackUnhandledRejections();
+
+      logger.onToolEnd("Bash", false);
+      await vi.advanceTimersByTimeAsync(0);
+      await logger.flush();
+      await vi.advanceTimersByTimeAsync(0);
+
+      tracked.done();
+      expect(tracked.rejections).toEqual([]);
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Failed to flush agent log entry for FN-SYNC-BOOM: sync sink boom"),
+      );
+    });
+  });
+
   // ── usage_events emission (U1) ─────────────────────────────────────
   describe("usage_events emission", () => {
     function createUsageStore() {

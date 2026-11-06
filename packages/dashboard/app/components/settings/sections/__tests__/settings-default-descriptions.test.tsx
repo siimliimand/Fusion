@@ -589,6 +589,16 @@ const NOT_SURFACED_ALLOWLIST: Record<string, string> = {
   tombstoneStickyWindowDays: "internal tombstone-retention constant, no UI field",
   heartbeatMultiplier: "internal scheduler tuning constant, no UI field",
   heartbeatPromptTemplate: "internal prompt-template selector, no UI field",
+  /*
+  FNXC:PlanReviewCapacityWake 2026-11-06-11:56:
+  KB-022: KB-009's SUBC-016 capacity-wake starvation policy added this DEFAULT_SETTINGS
+  key (plan-review continuations suspended on capacity are priority-admitted over fresh
+  intake once they have waited this long). It is a scheduler policy tuning constant set
+  via project settings JSON with no rendered Settings field, so it belongs in this
+  allowlist rather than SETTING_DESCRIPTION_KEYS — otherwise the FN-7505 guard fails
+  the whole dashboard quality lane on CI (Full Suite run 42207770829 shard 2).
+  */
+  planReviewCapacityWakeAgeMinutes: "internal capacity-wake starvation-age tuning constant, no UI field",
   agentLogFileRetentionDays: "not yet exposed as a distinct Settings field",
   chatRoomCompactionFetchLimit2: "not a real key (placeholder guard)",
   missionStaleThresholdMs: "internal mission-health tuning constant, no UI field",

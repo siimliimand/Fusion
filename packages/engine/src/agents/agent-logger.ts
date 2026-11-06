@@ -661,19 +661,44 @@ export class AgentLogger {
           .catch((err) => {
             this.log.warn(`Failed to flush agent log batch for ${this.taskId}: ${err instanceof Error ? err.message : String(err)}`);
           });
-      } else {
+      } else if (
+        typeof (this.store as TaskStore & { appendAgentLog?: unknown }).appendAgentLog === "function"
+      ) {
         await Promise.all(
           entries.map((entry) => {
             const timing = entry.durationMs !== undefined || entry.timeToFirstTokenMs !== undefined
               ? { durationMs: entry.durationMs, timeToFirstTokenMs: entry.timeToFirstTokenMs }
               : undefined;
-            const write = timing === undefined
-              ? this.store!.appendAgentLog(entry.taskId, entry.text, entry.type, entry.detail, entry.agent)
-              : this.store!.appendAgentLog(entry.taskId, entry.text, entry.type, entry.detail, entry.agent, timing);
+            /*
+            FNXC:AgentLoggerSinkContainment 2026-11-06-11:56:
+            KB-022: writeEntry fires this flush fire-and-forget (`void this.flushPendingEntries()`),
+            so this method must NEVER reject — an escape here becomes an unhandled process
+            rejection that flips a fully green vitest run to exit 1 (observed on every early
+            Full Suite CI run: four unhandled `TypeError: this.store.appendAgentLog is not a
+            function` rejections from partial store mocks). Two containment rules follow from
+            that contract: (1) a store missing appendAgentLog is a degraded sink, matched to
+            the batch branch's typeof guard — skip the durable write with a warn and keep the
+            callback sinks flowing; (2) a SINK THAT THROWS SYNCHRONOUSLY when called must be
+            converted to a rejected promise so the per-write .catch containment below engages
+            instead of the throw escaping the entries.map() argument construction.
+            */
+            const storeSink = this.store as TaskStore;
+            let write: Promise<void>;
+            try {
+              write = timing === undefined
+                ? storeSink.appendAgentLog(entry.taskId, entry.text, entry.type, entry.detail, entry.agent)
+                : storeSink.appendAgentLog(entry.taskId, entry.text, entry.type, entry.detail, entry.agent, timing);
+            } catch (err) {
+              write = Promise.reject(err instanceof Error ? err : new Error(String(err)));
+            }
             return write.catch((err) => {
               this.log.warn(`Failed to flush agent log entry for ${this.taskId}: ${err instanceof Error ? err.message : String(err)}`);
             });
           }),
+        );
+      } else {
+        this.log.warn(
+          `Agent store for ${this.taskId} exposes no appendAgentLog/appendAgentLogBatch sink; dropping ${entries.length} buffered agent-log entr${entries.length === 1 ? "y" : "ies"}`,
         );
       }
     }
