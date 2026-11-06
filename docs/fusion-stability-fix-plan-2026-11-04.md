@@ -1031,6 +1031,39 @@ File-scoped core+engine vitest + `pnpm verify:fast`. Changeset: `patch`, `catego
 
 ---
 
+## OPS-3 (done 2026-11-06) — CI brought live; post-merge evidence gate waived for KB-006/007/008
+
+Sequence of events and operator decisions on the Fusion (dogfooding) repo's CI:
+
+1. **Unpushed landings pushed**: the engine's landing flow never attempted origin pushes after its
+   08:43 access-rights failures (no retries, no surfaced error — the drift KB-022/OPS-2 flagged).
+   Manual pushes (root, then fusion via the deploy key) brought main to origin: KB-005/003/006/011
+   (`f8ef17e97`), ops docs (`eed0ab445`, `852487d0b`), KB-008/007/009 (`73f5d603d`), KB-013
+   (`14e1b8d57`), and the ledger fix (`bff4de6f9`).
+2. **Engine test-ledger regression fixed** (`bff4de6f9`): KB-009's new capacity-wake write
+   (`runCapacityWakePass>transitioned::store.transitionWorkflowWorkItem::#1` — CAS-fenced) was
+   classified `out-of-frontier` in the FN-8923 inventory fixture (mirroring its sibling
+   `releaseFileScopeWaitingContinuations` verdict), and 5 line-pinned MCP lane ledger entries were
+   refreshed after FIX-8's `mission-interview.ts` drift. Both files verified green locally and on
+   CI (engine shards 569/569, success:true — run 42207770829).
+3. **Remaining CI red (KB-022, in-progress)**: dashboard `test:quality:app:backfill-1/2` lanes die
+   ~2s in on CI (backfill-3/4 pass — file-split-specific, not lane-runner), and Pipeline smoke S16
+   (`pipeline-concurrency-and-merge.pipeline.test.ts`) fails: KB-005's
+   `reconcilePhantomMergeConfirmations` sweep interjects in the S16 scenario ("repeated or skipped
+   finalization"). The smoke red makes the post-merge evidence report `invalid-pipeline-smoke-report`.
+4. **Gate waiver (audited)**: KB-006/007/008 sat merge-complete in-review with exhausted retry
+   budgets, blocked solely by the post-merge-verification gate whose evidence could not exist
+   (dormant CI until today, then the S16-red smoke). Operator waived the step on exactly those
+   three cards via `PATCH /tasks/:id {enabledWorkflowSteps: ["plan-review","code-review"]}` —
+   per the workflow IR's own contract that intentional optional-step configurations are preserved.
+   All three completed 2026-11-06 ~12:55 UTC. Reversible per card by re-adding the step.
+5. **Open decision for the founder**: cards landing while S16 is red will stack in-review the same
+   way (KB-009, KB-013, KB-012, KB-017, KB-018 are next). Either KB-022 fixes the smoke quickly,
+   or the gate can be waived at project level until CI stabilizes — a quality-posture call,
+   deliberately left to the operator.
+
+---
+
 ## OPS-2 (done 2026-11-06) — Engine push identity, fork Actions dormancy, wedge auto-recovery
 
 Three host/repo defects blocked every fusion-repo landing's CI-evidence path; all fixed in this
