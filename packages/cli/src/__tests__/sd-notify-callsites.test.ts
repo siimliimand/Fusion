@@ -4,14 +4,21 @@ import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /*
- * FNXC:SdNotifyWatchdog 2026-11-05-22:35:
+ * FNXC:SdNotifyWatchdog 2026-11-06-06:42:
  * Structural reachability pins for the sd_notify watchdog wiring (KB-003 /
- * FIX-12b). Under a Type=notify unit a dropped listening-path notify means the
- * start job never sees READY and systemd kills the unit in a start-timeout
- * loop, while an over-wired surface (desktop, pre-boot holding server) would
- * send READY before its real server binds — the same wedged start-up. These
- * pins live beside the behavior tests so a removed or added wiring site cannot
- * happen silently.
+ * FIX-12b; KB-013 extends them). Under a Type=notify unit a dropped
+ * listening-path notify means the start job never sees READY and systemd
+ * kills the unit in a start-timeout loop, while an over-wired surface
+ * (desktop, pre-boot holding server) would send READY before its real server
+ * binds — the same wedged start-up. KB-013 extends the pins: every wired
+ * command's graceful shutdown must send STOPPING=1 (systemd then marks the
+ * unit deactivating and distinguishes a deliberate stop from a watchdog
+ * kill), while desktop and the pre-boot holding server must never send it —
+ * desktop has no NOTIFY_SOCKET and the holding server runs before the real
+ * boot; short-lived CLI commands are covered by keeping
+ * project-resolver.ts's process-global signal cleanup unwired (it never
+ * imports the helper). These pins live beside the behavior tests so a
+ * removed or added wiring site cannot happen silently.
  */
 const srcDir = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -32,6 +39,11 @@ describe("sd_notify call sites", () => {
       expect(source, `${file} must arm the watchdog heartbeat`).toContain(
         "startSdWatchdog(",
       );
+      expect(source, `${file} must send STOPPING=1 from its graceful shutdown`).toContain(
+        "sdNotifyStopping(",
+      );
+      // STOPPING rides the same notify path as READY/WATCHDOG; a removed wire
+      // leaves systemd unable to tell a deliberate stop from a watchdog kill.
     }
   });
 
@@ -51,6 +63,9 @@ describe("sd_notify call sites", () => {
       expect(source, `${file} must not send READY`).not.toContain("sdNotifyReady(");
       expect(source, `${file} must not arm the watchdog`).not.toContain(
         "startSdWatchdog(",
+      );
+      expect(source, `${file} must not send STOPPING`).not.toContain(
+        "sdNotifyStopping(",
       );
     }
   });

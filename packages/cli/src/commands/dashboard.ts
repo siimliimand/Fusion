@@ -132,7 +132,7 @@ import {
 } from "./task-lifecycle.js";
 import { promptForPort } from "./port-prompt.js";
 import { startMigrationHoldingServer } from "./migration-holding-server.js";
-import { sdNotifyReady, startSdWatchdog } from "../sd-notify.js";
+import { sdNotifyReady, sdNotifyStopping, startSdWatchdog } from "../sd-notify.js";
 import { ensureCwdProjectRegistered } from "./ensure-project-registered.js";
 import { createReadOnlyProviderSettingsView } from "./provider-settings.js";
 import { wrapAuthStorageWithApiKeyProviders } from "./provider-auth.js";
@@ -2599,6 +2599,19 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
       if (shutdownInProgress) process.exit(shutdownExitCode);
       shutdownInProgress = true;
       armHardExitWatchdog();
+
+      /*
+      FNXC:SdNotifyWatchdog 2026-11-06-06:42:
+      STOPPING=1 tells systemd this stop is deliberate (unit marked
+      deactivating; watchdog expectations released), so a `systemctl stop` is
+      distinguishable from a watchdog kill. Sent at shutdown START right after
+      the hard-exit watchdog is armed because the notify child must land its
+      datagram before teardown and the forced exit. No-op without
+      NOTIFY_SOCKET; the shutdownInProgress latch guarantees a single send.
+      runDashboardSupervised's parent signal handlers stay unwired — the
+      respawn child covers itself by running the same command.
+      */
+      sdNotifyStopping();
 
       // Log active handles at shutdown for diagnostics
       const handleTypes: Record<string, number> = {};

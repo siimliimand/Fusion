@@ -15,6 +15,11 @@
       "file": "packages/engine/src/__tests__/executor-prompt.test.ts",
       "reason": "Second sightings: https://github.com/Runfusion/Fusion/actions/runs/33034719148 (5769d5cd610e8830be24c4ede6eb79b38d2143c1) and https://github.com/Runfusion/Fusion/actions/runs/37339500295 (1a648d35d3987a6722b221e37df3084f75df6f0d); TaskExecutor pause-resume agent-creation count was zero only in shard/multi-file execution.",
       "quarantinedAt": "2026-10-05"
+    },
+    {
+      "file": "packages/cli/src/commands/__tests__/dashboard-concurrency-settings.test.ts",
+      "reason": "Second sighting of suite-only-flakes-observed-register.md entry 24: first recorded 2026-11-06 by KB-003 (tree 587c9ef69, fusion/kb-003), second 2026-11-06 by KB-013 (tree f1eefaad37, fusion/kb-013) in the workspace changed-only lane under full parallel load — 'drives unset live settings through every runDashboard TUI callback' timed out at 5000ms (dashboard-concurrency-settings.test.ts:213:13); the focused file re-run passed both times and the concurrently landing sd_notify diffs are synchronous early-return no-ops without NOTIFY_SOCKET.",
+      "quarantinedAt": "2026-11-06"
     }
   ]
 }

@@ -112,6 +112,19 @@ const quarantinedCliTests: string[] = [
   Keep the 14-day deletion ratchet and direct-file diagnostic bypass; do not appease this with timeout,
   retry, or assertion changes. This is not an engine-core merge-gate eviction.
   */
+  /*
+  FNXC:CliTests 2026-11-06-08:51:
+  KB-013 quarantines dashboard-concurrency-settings.test.ts on the SECOND sighting of the same
+  identity recorded in docs/solutions/test-failures/suite-only-flakes-observed-register.md entry 24
+  (first sighting by KB-003, 2026-11-06): 'drives unset live settings through every runDashboard TUI
+  callback' times out at the default 5000ms (line 213) only in the parallel changed-only lane under
+  CPU oversubscription, while focused file runs pass. No causal mechanism exists in the concurrent
+  sd_notify changes (synchronous early-return no-ops without NOTIFY_SOCKET). Quarantined on sight
+  per the deletion ratchet instead of widening testTimeout, adding retries, or changing worker
+  budgets. Not an engine-core merge-gate eviction; the explicitly-requested-file bypass below keeps
+  focused diagnosis runnable.
+  */
+  "src/commands/__tests__/dashboard-concurrency-settings.test.ts",
   "src/commands/__tests__/skills-get.test.ts",
 ];
 

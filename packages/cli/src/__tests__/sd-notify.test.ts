@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  SD_NOTIFY_WATCHDOG_BUDGET_DIVISOR,
   SD_NOTIFY_WATCHDOG_INTERVAL_MS,
   __resetSdNotifyStateForTests,
   __setSdNotifyExecForTests,
   isSdNotifyActive,
+  resolveSdWatchdogIntervalMs,
   sdNotifyReady,
+  sdNotifyStopping,
   startSdWatchdog,
   stopSdWatchdog,
 } from "../sd-notify.js";
@@ -150,15 +153,88 @@ describe("sd_notify helper", () => {
     expect(execCalls).toHaveLength(1); // only the failed READY attempt
   });
 
+  it("sdNotifyStopping sends exactly one STOPPING=1 via systemd-notify with a bounded timeout", () => {
+    vi.stubEnv("NOTIFY_SOCKET", FAKE_SOCKET);
+    sdNotifyStopping();
+    expect(execCalls).toHaveLength(1);
+    expect(execCalls[0].file).toBe("systemd-notify");
+    expect(execCalls[0].args).toEqual(["STOPPING=1"]);
+    expect(typeof execCalls[0].timeout).toBe("number");
+    expect(execCalls[0].timeout).toBeLessThanOrEqual(5000);
+  });
+
+  it("sdNotifyStopping is a complete no-op without NOTIFY_SOCKET", () => {
+    // Default environment has NOTIFY_SOCKET unset (dev/desktop/tests).
+    expect(isSdNotifyActive()).toBe(false);
+    expect(() => sdNotifyStopping()).not.toThrow();
+    expect(execCalls).toHaveLength(0);
+  });
+
+  it("the shared disable flag suppresses STOPPING alongside READY with only one warning", () => {
+    vi.stubEnv("NOTIFY_SOCKET", FAKE_SOCKET);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    pendingExecError = new Error("send EACCES: permission denied");
+    expect(() => sdNotifyReady()).not.toThrow();
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(String(warnSpy.mock.calls[0][0])).toContain("EACCES");
+    // STOPPING rides the same log-once disable: no exec call, no second warn.
+    expect(() => sdNotifyStopping()).not.toThrow();
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(execCalls).toHaveLength(1); // only the failed READY attempt
+  });
+
+  it("pins the fence factor: the unit budget must stay >= 6x the ping interval", () => {
+    expect(SD_NOTIFY_WATCHDOG_BUDGET_DIVISOR).toBe(6);
+  });
+
+  it("resolveSdWatchdogIntervalMs truth table: absent/invalid/zero fall back, valid derives budget/6", () => {
+    expect(resolveSdWatchdogIntervalMs()).toBe(30_000);
+    expect(resolveSdWatchdogIntervalMs("")).toBe(30_000);
+    expect(resolveSdWatchdogIntervalMs("abc")).toBe(30_000);
+    expect(resolveSdWatchdogIntervalMs("-5")).toBe(30_000);
+    expect(resolveSdWatchdogIntervalMs("12.5")).toBe(30_000);
+    expect(resolveSdWatchdogIntervalMs("0")).toBe(30_000);
+    // Deployment identity: WatchdogSec=180 → 180000000 µs → exactly the legacy 30s cadence.
+    expect(resolveSdWatchdogIntervalMs("180000000")).toBe(SD_NOTIFY_WATCHDOG_INTERVAL_MS);
+    expect(resolveSdWatchdogIntervalMs("360000000")).toBe(60_000);
+    expect(resolveSdWatchdogIntervalMs("6000000")).toBe(1_000);
+    // Tiny budget: floor(1000000/6000)=166 — proves there is NO upward clamp,
+    // keeping the fence exact for budgets below 6 seconds.
+    expect(resolveSdWatchdogIntervalMs("1000000")).toBe(166);
+  });
+
+  it("derived cadence: WATCHDOG_USEC=360000000 pings every 60s, never at 30s", () => {
+    vi.stubEnv("NOTIFY_SOCKET", FAKE_SOCKET);
+    vi.stubEnv("WATCHDOG_USEC", "360000000");
+    startSdWatchdog();
+    vi.advanceTimersByTime(30_000);
+    expect(watchdogSendCount()).toBe(0); // 60s interval: no ping at 30s
+    vi.advanceTimersByTime(30_000); // 60s total
+    expect(watchdogSendCount()).toBe(1);
+    vi.advanceTimersByTime(120_000); // 180s total
+    expect(watchdogSendCount()).toBe(3);
+  });
+
+  it("fallback cadence: invalid WATCHDOG_USEC keeps the exact 30s cadence", () => {
+    vi.stubEnv("NOTIFY_SOCKET", FAKE_SOCKET);
+    vi.stubEnv("WATCHDOG_USEC", "not-a-number");
+    startSdWatchdog();
+    vi.advanceTimersByTime(SD_NOTIFY_WATCHDOG_INTERVAL_MS * 3); // 90s total
+    expect(watchdogSendCount()).toBe(3);
+  });
+
   it("successful sends are silent: no per-ping logging noise", () => {
     vi.stubEnv("NOTIFY_SOCKET", FAKE_SOCKET);
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
     sdNotifyReady();
+    sdNotifyStopping();
     startSdWatchdog();
     vi.advanceTimersByTime(SD_NOTIFY_WATCHDOG_INTERVAL_MS * 3);
     expect(watchdogSendCount()).toBe(3);
+    // STOPPING succeeded in this scenario too (no log, real exec call recorded).
+    expect(execCalls.some((call) => call.args.includes("STOPPING=1"))).toBe(true);
     expect(warnSpy).not.toHaveBeenCalled();
     expect(errorSpy).not.toHaveBeenCalled();
     expect(logSpy).not.toHaveBeenCalled();

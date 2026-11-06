@@ -84,7 +84,7 @@ import { ensureBundledCursorRuntimePluginInstalled, ensureBundledDependencyGraph
 import { handleOpencodeGoApiKeySaved, syncStartupModels } from "./startup-model-sync.js";
 import { registerCustomProviders, reregisterCustomProviders } from "./custom-provider-registry.js";
 import { ensureCwdProjectRegistered } from "./ensure-project-registered.js";
-import { sdNotifyReady, startSdWatchdog } from "../sd-notify.js";
+import { sdNotifyReady, sdNotifyStopping, startSdWatchdog } from "../sd-notify.js";
 
 const DIAGNOSTIC_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 let daemonStartTime = 0;
@@ -1073,6 +1073,18 @@ export async function runDaemon(opts: DaemonOptions = {}) {
   const shutdown = async (signal?: NodeJS.Signals) => {
     if (shuttingDown) return;
     shuttingDown = true;
+
+    /*
+    FNXC:SdNotifyWatchdog 2026-11-06-06:42:
+    STOPPING=1 tells systemd this stop is deliberate (unit marked deactivating;
+    watchdog expectations released), so a `systemctl stop` is distinguishable
+    from a watchdog kill. Sent at shutdown START right after the latch because
+    the notify child must land its datagram before teardown and `process.exit`.
+    No-op without NOTIFY_SOCKET; the latch guarantees a single send. The
+    FNXC:DaemonSignalExit exit-code contract (SIGINT=130, SIGTERM=143) is
+    unchanged — STOPPING complements it without altering exit codes.
+    */
+    sdNotifyStopping();
 
     /*
     FNXC:PostgresResourceLifecycle 2026-07-14-21:48:

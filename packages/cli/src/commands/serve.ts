@@ -86,7 +86,7 @@ import { handleOpencodeGoApiKeySaved, syncStartupModels } from "./startup-model-
 import { ensureBundledCursorRuntimePluginInstalled, ensureBundledDependencyGraphPluginInstalled, ensureBundledGrokRuntimePluginInstalled, ensureBundledPluginInstalled, isBundledPluginId } from "../plugins/bundled-plugin-install.js";
 import { ensureCwdProjectRegistered } from "./ensure-project-registered.js";
 import { phaseTime } from "../startup-phase.js";
-import { sdNotifyReady, startSdWatchdog } from "../sd-notify.js";
+import { sdNotifyReady, sdNotifyStopping, startSdWatchdog } from "../sd-notify.js";
 
 const DIAGNOSTIC_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 let diagnosticIntervalHandle: ReturnType<typeof setInterval> | null = null;
@@ -1272,6 +1272,17 @@ export async function runServe(
   const SIGNAL_EXIT_CODES: Record<string, number> = { SIGINT: 130, SIGTERM: 143 };
 
   const shutdown = async (signal?: NodeJS.Signals) => {
+    /*
+    FNXC:SdNotifyWatchdog 2026-11-06-06:42:
+    STOPPING=1 tells systemd this stop is deliberate (unit marked deactivating;
+    watchdog expectations released), so a `systemctl stop` is distinguishable
+    from a watchdog kill. Sent at shutdown START because the notify child must
+    land its datagram before teardown and `process.exit`. No-op without
+    NOTIFY_SOCKET; repeated signals cannot duplicate it (requestShutdown
+    dedupes on shutdownPromise).
+    */
+    sdNotifyStopping();
+
     // Log active handles at shutdown for diagnostics
     const handleTypes: Record<string, number> = {};
     try {
