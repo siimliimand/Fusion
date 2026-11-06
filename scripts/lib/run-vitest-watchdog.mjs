@@ -88,6 +88,48 @@ export const DEFAULT_GRACE_MS = 5_000;
 export const DEFAULT_HEARTBEAT_MS = 5_000;
 export const TIMEOUT_EXIT_CODE = 124;
 
+/*
+FNXC:VitestWatchdogTailCapture 2026-11-06-11:56:
+KB-022: a lane that dies FAST (the dashboard-lane class exited 1 within ~2s on the
+first Full Suite run) must never again be silent — the captured tail is the only
+survivor when GitHub's log ingestion drops a step log's final seconds. The capture
+is OPT-IN (captureTail: true): the default stays stdio "inherit" with no capture so
+every existing caller (test-changed.mjs, passing lanes) keeps byte-identical
+behavior. Tails are bounded in memory (default 4096 bytes per stream), forwarded
+live chunk-by-chunk so passing runs still stream output, and reported ONLY on
+failure. The tail is the diagnostic — never dump the environment here.
+*/
+export const DEFAULT_TAIL_BYTES = 4_096;
+const TAIL_TRUNCATION_MARKER = "[truncated] ";
+
+/**
+ * Build a bounded rolling tail sink: forwards every chunk to `target` live
+ * (byte-identical streaming for passing runs), retains only the most recent
+ * `tailBytes` worth of content plus a small slack window, and renders the
+ * final tail with a truncation marker when older content was dropped.
+ * `target` may be null/absent (fake spawns) — writes become retention-only.
+ */
+export function createTailSink({ target = null, tailBytes = DEFAULT_TAIL_BYTES } = {}) {
+  let buf = "";
+  let clipped = false;
+  return {
+    write(chunk) {
+      target?.write?.(chunk);
+      buf += typeof chunk === "string" ? chunk : chunk.toString();
+      if (buf.length > tailBytes * 2) {
+        buf = buf.slice(-tailBytes);
+        clipped = true;
+      }
+    },
+    tail() {
+      if (buf.length > tailBytes) {
+        return `${TAIL_TRUNCATION_MARKER}${buf.slice(-tailBytes)}`;
+      }
+      return clipped ? `${TAIL_TRUNCATION_MARKER}${buf}` : buf;
+    },
+  };
+}
+
 /**
  * Derive a wall-clock budget for one invocation.
  *
@@ -185,6 +227,13 @@ export function captureHangDiagnostics({ label, command, args, budgetMs, started
  * @param {(signal: string, groupId: number|null) => void} [opts.killGroup] injected group-signaller
  *   (defaults to a process-group `process.kill(-pid)` with child.kill fallback);
  *   override in tests so signals are captured instead of hitting real groups.
+ * @param {boolean} [opts.captureTail] opt-in bounded stdout/stderr capture. Default false →
+ *   stdio "inherit" and no capture, preserving every existing caller's behavior.
+ * @param {number} [opts.tailBytes] per-stream retention bound when captureTail is on.
+ * @param {{write?: (chunk: unknown) => void}|null} [opts.stdoutTarget] live-forwarding target for
+ *   captured stdout (defaults to process.stdout); injectable for tests.
+ * @param {{write?: (chunk: unknown) => void}|null} [opts.stderrTarget] live-forwarding target for
+ *   captured stderr (defaults to process.stderr); injectable for tests.
  */
 export function runWithWatchdog({
   command,
@@ -199,6 +248,10 @@ export function runWithWatchdog({
   spawn,
   now = () => Date.now(),
   killGroup = null,
+  captureTail = false,
+  tailBytes = DEFAULT_TAIL_BYTES,
+  stdoutTarget = process.stdout,
+  stderrTarget = process.stderr,
 }) {
   if (typeof spawn !== "function") {
     throw new Error("runWithWatchdog requires an injected `spawn` function");
@@ -214,12 +267,18 @@ export function runWithWatchdog({
 
     // process-supervisor-allowlist: foreground wrapper signals the whole vitest
     // process group on death/timeout; not a background daemon.
+    // With captureTail on, the same foreground wrapper pipes its own child's
+    // stdio, forwards chunks live, and retains bounded tails — still no daemon.
+    const outTail = captureTail ? createTailSink({ target: stdoutTarget, tailBytes }) : null;
+    const errTail = captureTail ? createTailSink({ target: stderrTarget, tailBytes }) : null;
     const child = spawn(command, args, {
       detached: true,
-      stdio: "inherit",
+      stdio: captureTail ? ["inherit", "pipe", "pipe"] : "inherit",
       env,
       ...(cwd ? { cwd } : {}),
     });
+    child.stdout?.on("data", (chunk) => outTail?.write(chunk));
+    child.stderr?.on("data", (chunk) => errTail?.write(chunk));
     // Capture the detached process-group identity while this ChildProcess is
     // created. Reading child.pid during later timeout/cancellation handling can
     // follow a mutable test double or a stale process handle instead of the
@@ -343,12 +402,23 @@ export function runWithWatchdog({
       if (settled) return;
       settled = true;
       cleanup();
-      resolve({
+      const result = {
         code: timedOut ? TIMEOUT_EXIT_CODE : code,
         signal: timedOut ? null : signal,
         timedOut,
         diagnostics,
-      });
+      };
+      // KB-022: tails are reported only on failure — a passing lane must not
+      // grow the result (or any caller log) with captured output.
+      const failed =
+        timedOut ||
+        (signal !== null && signal !== undefined) ||
+        (typeof code === "number" && code !== 0);
+      if (captureTail && failed) {
+        if (outTail) result.stdoutTail = outTail.tail();
+        if (errTail) result.stderrTail = errTail.tail();
+      }
+      resolve(result);
     });
   });
 }

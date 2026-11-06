@@ -34,6 +34,7 @@ import {
   enumerateDashboardLanes,
   laneProjectNames,
   buildShardCommands,
+  runWatched,
   TIMINGS_STALENESS_DAYS,
   writeShardDiagnosticPayload,
 } from "../ci-test-shard.mjs";
@@ -733,6 +734,93 @@ test("CI evidence: diagnostic payload uses the timing artifact shape without inv
   assert.deepEqual(payload.testResults, []);
   assert.equal(payload.fusionShardDiagnostic.stage, "test-command");
   assert.equal(payload.fusionShardDiagnostic.timedOut, true);
+});
+
+/*
+FNXC:FullSuiteShardRunner 2026-11-06-11:56:
+KB-022 pins the loud-failure guard: a fast lane death must echo a banner with
+the captured stderr tail into the step log, carry the tails on
+error.shardDiagnostic, and persist them inside fusionShardDiagnostic — the
+lane-anonymous empty payload from the first Full Suite run is what made that
+failure structurally undiagnosable.
+*/
+test("KB-022: runWatched echoes a loud banner with the captured stderr tail on failure", async (t) => {
+  const originalConsoleError = console.error;
+  const captured = [];
+  console.error = (...parts) => captured.push(parts.map((p) => String(p)).join(" "));
+  t.after(() => {
+    console.error = originalConsoleError;
+  });
+
+  let thrown = null;
+  try {
+    await runWatched(process.execPath, ["-e", "console.error('LANE-STDERR-MARKER: real failure reason'); process.exit(3)"], {
+      budgetMs: 60_000,
+      label: "kb-022-fast-death",
+    });
+  } catch (error) {
+    thrown = error;
+  }
+
+  assert.ok(thrown, "runWatched must throw on a failing command");
+  assert.equal(thrown.shardDiagnostic.stage, "test-command");
+  assert.equal(thrown.shardDiagnostic.exitCode, 3);
+  assert.equal(thrown.shardDiagnostic.timedOut, false);
+  assert.ok(thrown.shardDiagnostic.stderrTail.includes("LANE-STDERR-MARKER"));
+
+  const joined = captured.join("\n");
+  assert.ok(joined.includes("[ci-test-shard] LANE FAILED FAST"));
+  assert.ok(joined.includes("captured stderr tail"));
+  assert.ok(joined.includes("LANE-STDERR-MARKER"));
+  assert.ok(joined.includes(process.execPath));
+});
+
+test("KB-022: runWatched stays silent on success and resolves without throwing", async () => {
+  const originalConsoleError = console.error;
+  const captured = [];
+  console.error = (...parts) => captured.push(parts.map((p) => String(p)).join(" "));
+  try {
+    await runWatched(process.execPath, ["-e", "process.exit(0)"], {
+      budgetMs: 60_000,
+      label: "kb-022-success",
+    });
+  } finally {
+    console.error = originalConsoleError;
+  }
+  assert.ok(!captured.join("\n").includes("LANE FAILED FAST"));
+});
+
+test("KB-022: writeShardDiagnosticPayload persists bounded tails inside fusionShardDiagnostic", (t) => {
+  const projectRoot = mkdtempSync(path.join(tmpdir(), "ci-shard-diagnostic-tails-"));
+  t.after(() => rmSync(projectRoot, { recursive: true, force: true }));
+  const outputFile = writeShardDiagnosticPayload(
+    {
+      shard: 1,
+      total: 4,
+      stage: "test-command",
+      exitCode: 1,
+      signal: null,
+      timedOut: false,
+      stderrTail: "[truncated] Error: boom from the dying lane",
+      stdoutTail: "last stdout before death",
+    },
+    { projectRoot },
+  );
+  const payload = JSON.parse(readFileSync(outputFile, "utf8"));
+  assert.equal(payload.fusionShardDiagnostic.stderrTail, "[truncated] Error: boom from the dying lane");
+  assert.equal(payload.fusionShardDiagnostic.stdoutTail, "last stdout before death");
+});
+
+test("KB-022: writeShardDiagnosticPayload omits tail fields when no output was captured", (t) => {
+  const projectRoot = mkdtempSync(path.join(tmpdir(), "ci-shard-diagnostic-no-tails-"));
+  t.after(() => rmSync(projectRoot, { recursive: true, force: true }));
+  const outputFile = writeShardDiagnosticPayload(
+    { shard: 3, total: 4, stage: "test-command", exitCode: 1, signal: null, timedOut: false, stderrTail: "", stdoutTail: "" },
+    { projectRoot },
+  );
+  const payload = JSON.parse(readFileSync(outputFile, "utf8"));
+  assert.equal("stderrTail" in payload.fusionShardDiagnostic, false);
+  assert.equal("stdoutTail" in payload.fusionShardDiagnostic, false);
 });
 
 test("U6: buildShardCommands forwards JSON timing flags to plain package test scripts", () => {

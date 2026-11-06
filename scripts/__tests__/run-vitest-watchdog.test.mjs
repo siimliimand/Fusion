@@ -293,3 +293,143 @@ test("runWithWatchdog: passes cwd through to spawn when provided", async () => {
   await p;
   assert.equal(capturedOpts.cwd, "/tmp/repo-root");
 });
+
+// ── KB-022: opt-in bounded tail capture ─────────────────────────
+
+function makeFakeChildWithStreams() {
+  const child = makeFakeChild();
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  return child;
+}
+
+function makeCollectingTarget() {
+  return {
+    chunks: [],
+    write(chunk) {
+      this.chunks.push(chunk);
+    },
+  };
+}
+
+test("runWithWatchdog: default is stdio inherit with no capture (behavior-preserving)", async () => {
+  let capturedOpts = null;
+  const child = makeFakeChild();
+  const p = runWithWatchdog({
+    command: "fake",
+    args: [],
+    budgetMs: 10_000,
+    label: "default-inherit",
+    log: () => {},
+    spawn: (_cmd, _args, opts) => {
+      capturedOpts = opts;
+      return child;
+    },
+    killGroup: () => {},
+  });
+  child.emit("close", 1, null);
+  const result = await p;
+  assert.equal(capturedOpts.stdio, "inherit");
+  assert.equal(result.stdoutTail, undefined);
+  assert.equal(result.stderrTail, undefined);
+});
+
+test("runWithWatchdog: captureTail forwards chunks live and reports tails on failure", async () => {
+  const child = makeFakeChildWithStreams();
+  const outTarget = makeCollectingTarget();
+  const errTarget = makeCollectingTarget();
+  const p = runWithWatchdog({
+    command: "fake",
+    args: [],
+    budgetMs: 10_000,
+    label: "capture-failure",
+    log: () => {},
+    spawn: fakeSpawn(child),
+    killGroup: () => {},
+    captureTail: true,
+    tailBytes: 64,
+    stdoutTarget: outTarget,
+    stderrTarget: errTarget,
+  });
+  child.stdout.emit("data", "out-line-1\n");
+  child.stderr.emit("data", "err-line-1\n");
+  // Live forwarding: every chunk reached its target synchronously on emit.
+  assert.deepEqual(outTarget.chunks, ["out-line-1\n"]);
+  assert.deepEqual(errTarget.chunks, ["err-line-1\n"]);
+  child.emit("close", 1, null);
+  const result = await p;
+  assert.equal(result.code, 1);
+  assert.ok(result.stdoutTail.includes("out-line-1"));
+  assert.ok(result.stderrTail.includes("err-line-1"));
+});
+
+test("runWithWatchdog: captureTail bounds the tail and marks older content as truncated", async () => {
+  const child = makeFakeChildWithStreams();
+  const errTarget = makeCollectingTarget();
+  const p = runWithWatchdog({
+    command: "fake",
+    args: [],
+    budgetMs: 10_000,
+    label: "capture-bounded",
+    log: () => {},
+    spawn: fakeSpawn(child),
+    killGroup: () => {},
+    captureTail: true,
+    tailBytes: 64,
+    stdoutTarget: makeCollectingTarget(),
+    stderrTarget: errTarget,
+  });
+  child.stderr.emit("data", "HEAD-of-noise-should-be-dropped-because-the-tail-window-is-small");
+  child.stderr.emit("data", "THE-ACTUAL-ERROR: ECONNREFUSED");
+  child.emit("close", 1, null);
+  const result = await p;
+  assert.ok(result.stderrTail.startsWith("[truncated] "));
+  assert.ok(result.stderrTail.includes("THE-ACTUAL-ERROR"));
+  assert.ok(!result.stderrTail.includes("HEAD-of-noise"));
+  assert.ok(result.stderrTail.length <= "[truncated] ".length + 64);
+});
+
+test("runWithWatchdog: captureTail reports no tails on success", async () => {
+  const child = makeFakeChildWithStreams();
+  const p = runWithWatchdog({
+    command: "fake",
+    args: [],
+    budgetMs: 10_000,
+    label: "capture-success",
+    log: () => {},
+    spawn: fakeSpawn(child),
+    killGroup: () => {},
+    captureTail: true,
+    stdoutTarget: makeCollectingTarget(),
+    stderrTarget: makeCollectingTarget(),
+  });
+  child.stdout.emit("data", "passing output\n");
+  child.emit("close", 0, null);
+  const result = await p;
+  assert.equal(result.code, 0);
+  assert.equal(result.stdoutTail, undefined);
+  assert.equal(result.stderrTail, undefined);
+});
+
+test("runWithWatchdog: captureTail tolerates a child without stream objects", async () => {
+  // Existing node:test fake spawns emit close without stream objects; the
+  // capture path must degrade gracefully, not throw on missing stdout/stderr.
+  // The sink still exists, so failure carries EMPTY tails — callers treat any
+  // falsy tail (absent or empty) as "no captured output".
+  const child = makeFakeChild();
+  const p = runWithWatchdog({
+    command: "fake",
+    args: [],
+    budgetMs: 10_000,
+    label: "capture-no-streams",
+    log: () => {},
+    spawn: fakeSpawn(child),
+    killGroup: () => {},
+    captureTail: true,
+  });
+  child.emit("close", 1, null);
+  const result = await p;
+  assert.equal(result.code, 1);
+  assert.equal(result.stdoutTail, "");
+  assert.equal(result.stderrTail, "");
+});

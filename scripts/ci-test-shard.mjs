@@ -66,6 +66,11 @@ export function writeShardDiagnosticPayload(diagnostic, options = {}) {
         exitCode: diagnostic.exitCode ?? null,
         signal: diagnostic.signal ?? null,
         timedOut: diagnostic.timedOut === true,
+        // KB-022: bounded captured output tails (strings with truncation
+        // markers) travel with the payload so a fast lane death survives log
+        // loss. Ids/outcomes/error-text only — never an environment dump.
+        ...(diagnostic.stderrTail != null && diagnostic.stderrTail !== "" && { stderrTail: diagnostic.stderrTail }),
+        ...(diagnostic.stdoutTail != null && diagnostic.stdoutTail !== "" && { stdoutTail: diagnostic.stdoutTail }),
       },
     }, null, 2)}\n`,
     "utf8",
@@ -76,8 +81,22 @@ export function writeShardDiagnosticPayload(diagnostic, options = {}) {
 // Test invocations run under the L2 wall-clock watchdog so a wedged vitest run
 // is SIGTERM/SIGKILLed at its budget instead of blocking to the CI job ceiling.
 // Preserves the fail-fast contract of `run` (exit non-zero on failure/timeout).
-async function runWatched(command, commandArgs, { env, budgetMs, label } = {}) {
-  const { code, signal, timedOut } = await runWithWatchdog({
+/*
+FNXC:FullSuiteShardRunner 2026-11-06-11:56:
+KB-022 loud-failure guard: every lane (plain, virtual engine slice, dashboard
+lane) runs with captureTail enabled so a FAST lane death (the dashboard-lane
+class exited 1 within ~2s on the first Full Suite run while GitHub dropped the
+step log's final seconds) prints a loud banner with the captured stderr/stdout
+tails and the exact command args into the step log, and the tails travel inside
+error.shardDiagnostic into the shard diagnostic payload. Without this, a fast
+child death and a lost log tail make the failure structurally undiagnosable —
+the lane-anonymous empty payload is exactly what misdirected the original
+KB-022 investigation toward the dashboard lane when the engine lane had exited.
+Capture is bounded (last ~4KB per stream), forwarded live so passing runs stay
+byte-identical, and never dumps the environment — the tail is the diagnostic.
+*/
+export async function runWatched(command, commandArgs, { env, budgetMs, label, captureTail = true } = {}) {
+  const { code, signal, timedOut, stdoutTail, stderrTail } = await runWithWatchdog({
     command,
     args: commandArgs,
     env: env ?? process.env,
@@ -85,14 +104,27 @@ async function runWatched(command, commandArgs, { env, budgetMs, label } = {}) {
     label: label ?? command,
     log: console.error,
     spawn,
+    captureTail,
   });
   if (timedOut || signal || code !== 0) {
+    const banner = [
+      `[ci-test-shard] LANE FAILED FAST — captured output tail follows`,
+      `[ci-test-shard] command: ${command} ${commandArgs.join(" ")}`,
+    ];
+    if (stderrTail) banner.push(`[ci-test-shard] --- captured stderr tail ---\n${stderrTail}`);
+    if (stdoutTail) banner.push(`[ci-test-shard] --- captured stdout tail ---\n${stdoutTail}`);
+    if (!stderrTail && !stdoutTail) {
+      banner.push(`[ci-test-shard] (no captured output: the child produced none before exiting)`);
+    }
+    for (const line of banner) console.error(line);
     const error = new Error(`Test command failed: ${label ?? command}`);
     error.shardDiagnostic = {
       stage: "test-command",
       exitCode: timedOut ? 124 : (code ?? 1),
       signal,
       timedOut,
+      ...(stderrTail !== undefined && { stderrTail }),
+      ...(stdoutTail !== undefined && { stdoutTail }),
     };
     throw error;
   }
@@ -1491,6 +1523,8 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
       exitCode: details?.exitCode,
       signal: details?.signal,
       timedOut: details?.timedOut,
+      stderrTail: details?.stderrTail,
+      stdoutTail: details?.stdoutTail,
     });
     throw error;
   }
