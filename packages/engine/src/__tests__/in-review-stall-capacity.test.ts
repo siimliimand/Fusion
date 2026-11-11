@@ -1,10 +1,13 @@
 import { EventEmitter } from "node:events";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { countRecentIdenticalStallEntries, type Task, type TaskStore } from "@fusion/core";
+import { countRecentIdenticalStallEntries, FAILED_PRE_MERGE_STEPS_BLOCKER, type Task, type TaskStore } from "@fusion/core";
 import { SelfHealingManager } from "../self-healing.js";
 
 const COMPLETED_REVIEW_REASON = "Completed review task has no merge owner or status for >= 5 min";
 const SUPPRESSED_LOG_ACTION = "In-review stall suppressed [capacity]: claimed=2/max=2";
+/** A retryable provider error so the marked-status fixture stays a merge-blocker (not non-retryable). */
+const WORKTREE_CREATION_ERROR = "Failed to create worktree after 3 attempts: ENOENT";
+const MARKED_STATUS_REASON = `task is marked 'failed': ${WORKTREE_CREATION_ERROR}`;
 
 /**
  * KB-016 regression harness. Mirrors the in-review-stall-deadlock-disposition mock store:
@@ -78,6 +81,38 @@ function liveWipTask(id: string): Task {
     workflowStepResults: [],
     updatedAt: "2026-01-01T00:00:00.000Z",
     log: [],
+  } as unknown as Task;
+}
+
+/*
+The KB-046 saturated-window sibling shape (2026-11-06, proj_67ae5a1eb06e4218): a review card whose
+ONLY merge blocker is a FAILED pre-merge workflow-step result. Arm-order dodges are deliberate and
+load-bearing:
+- `mergeRetries: 1` walks past BOTH the completed-review-status-none arm (requires retries === 0)
+  and the merge-retries-exhausted arm (requires retries >= default max 3), so the classifier
+  reaches the merge-blocker arm carrying this exact reason.
+- `status: null` (NOT "failed"): a failed task STATUS produces the marked-status reason
+  `task is marked 'failed': <error>` instead — a DIFFERENT reason that must keep counting (scenario E).
+- Fresh `updatedAt` also dodges completed-review independently of the retries dodge; stale updatedAt
+  here mirrors the incident card that had been waiting across multiple sweep windows.
+*/
+function failedPreMergeStepTask(overrides: Partial<Task> = {}): Task {
+  return {
+    id: "KB-046-CAP",
+    column: "in-review",
+    paused: false,
+    userPaused: false,
+    status: null,
+    error: null,
+    branch: "fusion/kb-046-cap",
+    worktree: "/tmp/kb-046-cap",
+    mergeDetails: {},
+    mergeRetries: 1,
+    steps: [{ name: "implement", status: "done" }],
+    workflowStepResults: [{ workflowStepId: "WS-GATE", workflowStepName: "code-review", status: "failed", phase: "pre-merge" }],
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    log: [],
+    ...overrides,
   } as unknown as Task;
 }
 
@@ -408,6 +443,238 @@ describe("reliability: in-review stall capacity exemption (KB-016)", () => {
     expect((store.updateTask as any).mock.calls).toHaveLength(0);
     expect((store.enqueueMergeQueue as any).mock.calls).toHaveLength(0);
     expect(requeue).not.toHaveBeenCalled();
+
+    manager.stop();
+  });
+
+  /*
+  KB-046 scenario A — the incident reproduction. A saturated board (seam reports 2/2) with a card
+  whose ONLY merge blocker is the exact failed-pre-merge-step reason: exactly ONE deduplicated
+  visible wait line across multiple sweep ticks, no surfaced entry, no disposal write, and the
+  bounded audit event carrying code "merge-blocker" with counts-only metadata. Pre-KB-046 this
+  exact fixture accrued three identical surfaced entries and was auto-paused failed with
+  `pausedReason: "in-review-stall-deadlock"` — the Symptom Verification's assertion-it-is-gone.
+  */
+  it("scenario A (KB-046): saturated board suppresses the failed-pre-merge-step merge-blocker with one deduplicated wait line and no disposal", async () => {
+    const task = failedPreMergeStepTask();
+    const store = createStore(task);
+    const manager = new SelfHealingManager(store, {
+      rootDir: "/tmp/repo",
+      getConcurrencyCapacity: () => ({ claimed: 2, maxConcurrent: 2 }),
+    });
+
+    vi.setSystemTime(new Date("2026-01-01T00:10:00.000Z"));
+    expect(await manager.surfaceInReviewStalls()).toBe(0);
+
+    expect(task.log).toHaveLength(1);
+    expect(task.log![0].action).toBe(SUPPRESSED_LOG_ACTION);
+    expect(task.log!.some((entry) => entry.action.startsWith("In-review stall surfaced ["))).toBe(false);
+    expect(task.log!.some((entry) => entry.action.startsWith("In-review stall auto-disposed ["))).toBe(false);
+    expect(task.paused).toBeFalsy();
+    expect(task.status).toBeNull();
+    expect((store.updateTask as any).mock.calls).toHaveLength(0);
+
+    const auditEvents = (store as any).__auditEvents as any[];
+    const suppressedEvents = auditEvents.filter((event) => event.mutationType === "task:in-review-stall-capacity-suppressed");
+    expect(suppressedEvents).toHaveLength(1);
+    expect(suppressedEvents[0]).toMatchObject({
+      domain: "database",
+      taskId: "KB-046-CAP",
+      target: "KB-046-CAP",
+      agentId: "self-healing",
+      metadata: {
+        taskId: "KB-046-CAP",
+        code: "merge-blocker",
+        claimed: 2,
+        maxConcurrent: 2,
+      },
+    });
+
+    vi.setSystemTime(new Date("2026-01-01T00:11:00.000Z"));
+    expect(await manager.surfaceInReviewStalls()).toBe(0);
+    vi.setSystemTime(new Date("2026-01-01T00:12:00.000Z"));
+    expect(await manager.surfaceInReviewStalls()).toBe(0);
+
+    expect(task.log).toHaveLength(1);
+    expect((store.updateTask as any).mock.calls).toHaveLength(0);
+    expect(auditEvents.filter((event) => event.mutationType === "task:in-review-stall-capacity-suppressed")).toHaveLength(1);
+    expect(auditEvents.filter((event) => event.mutationType === "task:in-review-stall-deadlock-disposed")).toHaveLength(0);
+
+    // Counter hygiene: the suppression marker broke the identical-stall run — the disposal counter
+    // never accrued during the wait.
+    expect(countRecentIdenticalStallEntries(task, {
+      code: "merge-blocker",
+      reason: FAILED_PRE_MERGE_STEPS_BLOCKER,
+    })).toBe(0);
+
+    manager.stop();
+  });
+
+  it("scenario B (KB-046): production path without the seam computes saturation from the store and suppresses identically", async () => {
+    const task = failedPreMergeStepTask();
+    const store = createStore(task);
+    const wipA = liveWipTask("KB-046-WIP-A");
+    const wipB = liveWipTask("KB-046-WIP-B");
+    (store as any).listTasks = vi.fn().mockResolvedValue([wipA, wipB, task]);
+    const manager = new SelfHealingManager(store, { rootDir: "/tmp/repo" });
+
+    vi.setSystemTime(new Date("2026-01-01T00:10:00.000Z"));
+    expect(await manager.surfaceInReviewStalls()).toBe(0);
+
+    expect(task.log).toHaveLength(1);
+    expect(task.log![0].action).toBe(SUPPRESSED_LOG_ACTION);
+    expect(task.log!.some((entry) => entry.action.startsWith("In-review stall surfaced ["))).toBe(false);
+    expect(task.paused).toBeFalsy();
+    expect((store.updateTask as any).mock.calls).toHaveLength(0);
+
+    const auditEvents = (store as any).__auditEvents as any[];
+    const suppressedEvents = auditEvents.filter((event) => event.mutationType === "task:in-review-stall-capacity-suppressed");
+    expect(suppressedEvents).toHaveLength(1);
+    expect(suppressedEvents[0].metadata).toMatchObject({ code: "merge-blocker", claimed: 2, maxConcurrent: 2 });
+    expect(auditEvents.filter((event) => event.mutationType === "task:in-review-stall-deadlock-disposed")).toHaveLength(0);
+
+    expect(countRecentIdenticalStallEntries(task, {
+      code: "merge-blocker",
+      reason: FAILED_PRE_MERGE_STEPS_BLOCKER,
+    })).toBe(0);
+
+    manager.stop();
+  });
+
+  /*
+  KB-046 scenario C — the genuine-deadlock fence. The SAME failed-pre-merge-step card shape with a
+  FREE slot still surfaces identically and disposes after the preserved 3-identical-stall threshold:
+  capacity handling must never neuter real deadlock detection for this reason family.
+  */
+  it("scenario C (KB-046): free capacity keeps the failed-pre-merge-step merge-blocker surfacing and disposing after threshold", async () => {
+    const task = failedPreMergeStepTask();
+    const store = createStore(task);
+    const manager = new SelfHealingManager(store, {
+      rootDir: "/tmp/repo",
+      getConcurrencyCapacity: () => ({ claimed: 1, maxConcurrent: 2 }),
+    });
+
+    // Ticks 1-2 — surfaced entries accrue normally (prior-identical counts 0 then 1).
+    const surfaceAt = ["2026-01-01T00:10:00.000Z", "2026-01-01T00:12:00.000Z"];
+    for (const timestamp of surfaceAt) {
+      vi.setSystemTime(new Date(timestamp));
+      expect(await manager.surfaceInReviewStalls()).toBe(1);
+    }
+
+    expect(task.paused).toBeFalsy();
+    expect(task.log!.filter((entry) => entry.action.startsWith("In-review stall surfaced [merge-blocker]:"))).toHaveLength(2);
+    expect(task.log!.some((entry) => entry.action.startsWith("In-review stall suppressed ["))).toBe(false);
+
+    // Tick 3 — 2 prior identical stalls + this tick = the preserved threshold of 3 → dispose once.
+    vi.setSystemTime(new Date("2026-01-01T00:14:00.000Z"));
+    expect(await manager.surfaceInReviewStalls()).toBe(1);
+
+    expect(task.paused).toBe(true);
+    expect(task.pausedReason).toBe("in-review-stall-deadlock");
+    expect(task.status).toBe("failed");
+    const disposedEntries = task.log!.filter((entry) => entry.action.startsWith("In-review stall auto-disposed [merge-blocker]:"));
+    expect(disposedEntries).toHaveLength(1);
+    expect(disposedEntries[0].action).toContain("deadlock-prevention threshold reached after 3 identical stalls");
+    expect(disposedEntries[0].action).toContain(FAILED_PRE_MERGE_STEPS_BLOCKER);
+    expect((store.updateTask as any).mock.calls).toHaveLength(1);
+
+    const auditEvents = (store as any).__auditEvents as any[];
+    const disposeAuditEvents = auditEvents.filter((event) => event.mutationType === "task:in-review-stall-deadlock-disposed");
+    expect(disposeAuditEvents).toHaveLength(1);
+    expect(disposeAuditEvents[0].metadata).toMatchObject({ code: "merge-blocker", reason: FAILED_PRE_MERGE_STEPS_BLOCKER });
+
+    manager.stop();
+  });
+
+  /*
+  KB-046 scenario D — capacity frees mid-window: the suppression marker broke the identical-stall
+  run, so surfaced entries accrue from ZERO after the slot frees and disposal only fires after the
+  full post-free threshold. Pre-free wait time can never contribute to disposal.
+  */
+  it("scenario D (KB-046): capacity freeing mid-window resets the stall counter; disposal fires only from post-free counts", async () => {
+    const task = failedPreMergeStepTask();
+    const store = createStore(task);
+    let capacity: { claimed: number; maxConcurrent: number } = { claimed: 2, maxConcurrent: 2 };
+    const manager = new SelfHealingManager(store, {
+      rootDir: "/tmp/repo",
+      getConcurrencyCapacity: () => capacity,
+    });
+
+    // Tick 1 — saturated: the wait is visible, the counter is untouched.
+    vi.setSystemTime(new Date("2026-01-01T00:10:00.000Z"));
+    expect(await manager.surfaceInReviewStalls()).toBe(0);
+    expect(task.log).toHaveLength(1);
+    expect(task.log![0].action).toBe(SUPPRESSED_LOG_ACTION);
+
+    // Capacity frees: surfaced entries accrue from zero — the marker is a non-surfaced entry, so
+    // the pre-free wait contributed nothing to the counter.
+    capacity = { claimed: 0, maxConcurrent: 2 };
+    vi.setSystemTime(new Date("2026-01-01T00:12:00.000Z"));
+    expect(await manager.surfaceInReviewStalls()).toBe(1);
+    vi.setSystemTime(new Date("2026-01-01T00:14:00.000Z"));
+    expect(await manager.surfaceInReviewStalls()).toBe(1);
+
+    expect(task.log!.map((entry) => entry.action)).toEqual([
+      SUPPRESSED_LOG_ACTION,
+      `In-review stall surfaced [merge-blocker]: ${FAILED_PRE_MERGE_STEPS_BLOCKER}`,
+      `In-review stall surfaced [merge-blocker]: ${FAILED_PRE_MERGE_STEPS_BLOCKER}`,
+    ]);
+    expect(task.paused).toBeFalsy();
+    expect((store.updateTask as any).mock.calls).toHaveLength(0);
+
+    // Disposal fires on the 3rd post-free stall tick (2 prior post-free surfaced + this tick) —
+    // never earlier from pre-free counts.
+    vi.setSystemTime(new Date("2026-01-01T00:16:00.000Z"));
+    expect(await manager.surfaceInReviewStalls()).toBe(1);
+    expect(task.paused).toBe(true);
+    expect(task.pausedReason).toBe("in-review-stall-deadlock");
+    expect(task.status).toBe("failed");
+    const disposedEntries = task.log!.filter((entry) => entry.action.startsWith("In-review stall auto-disposed [merge-blocker]:"));
+    expect(disposedEntries).toHaveLength(1);
+    expect(disposedEntries[0].action).toContain("deadlock-prevention threshold reached after 3 identical stalls");
+
+    manager.stop();
+  });
+
+  /*
+  KB-046 scenario E — the narrowness fence at sweep level: a marked-status fixture (task STATUS
+  "failed" with a retryable worktree-creation error, the FN-4885 disposition shape) under FORCED
+  saturation still surfaces and disposes after threshold identical stalls. Its reason is
+  `task is marked 'failed': …`, NOT the failed-pre-merge-step sentence, so the exemption must not
+  swallow it — other reasons keep counting end to end.
+  */
+  it("scenario E (KB-046): a marked-status merge-blocker under forced saturation still surfaces and disposes", async () => {
+    const task = failedPreMergeStepTask({
+      status: "failed",
+      error: WORKTREE_CREATION_ERROR,
+      workflowStepResults: [],
+    });
+    const store = createStore(task);
+    const manager = new SelfHealingManager(store, {
+      rootDir: "/tmp/repo",
+      getConcurrencyCapacity: () => ({ claimed: 2, maxConcurrent: 2 }),
+    });
+
+    for (const timestamp of ["2026-01-01T00:10:00.000Z", "2026-01-01T00:12:00.000Z"]) {
+      vi.setSystemTime(new Date(timestamp));
+      expect(await manager.surfaceInReviewStalls()).toBe(1);
+    }
+
+    expect(task.paused).toBeFalsy();
+    expect(task.log!.filter((entry) => entry.action.startsWith("In-review stall surfaced [merge-blocker]:"))).toHaveLength(2);
+    expect(task.log!.some((entry) => entry.action.startsWith("In-review stall suppressed ["))).toBe(false);
+    // The surfaced reason is the marked-status sentence, not the failed-pre-merge-step sentence.
+    expect(task.log![0].action).toBe(`In-review stall surfaced [merge-blocker]: ${MARKED_STATUS_REASON}`);
+
+    // Tick 3 — threshold reached despite forced saturation: the narrowness fence holds.
+    vi.setSystemTime(new Date("2026-01-01T00:14:00.000Z"));
+    expect(await manager.surfaceInReviewStalls()).toBe(1);
+
+    expect(task.paused).toBe(true);
+    expect(task.pausedReason).toBe("in-review-stall-deadlock");
+    expect(task.status).toBe("failed");
+    expect(task.log!.filter((entry) => entry.action.startsWith("In-review stall auto-disposed [merge-blocker]:"))).toHaveLength(1);
+    expect((store.updateTask as any).mock.calls).toHaveLength(1);
 
     manager.stop();
   });

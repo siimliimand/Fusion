@@ -626,7 +626,9 @@ describe("self-healing sweeps are bounded by a hardcoded column QUERY, not by th
   step. Its literal read meant that card stayed parked on a renamed board until a human noticed.
 
   This sweep is the sharpest example of part 5 of the shape. Its filter asks
-  `blocker !== "task has failed pre-merge workflow steps"` — an EXACT STRING match. Unwired on a renamed
+  `isFailedPreMergeStepsBlocker(blocker)` — an EXACT match against the shared
+  `FAILED_PRE_MERGE_STEPS_BLOCKER` named contract (formerly the inline literal
+  `blocker !== "task has failed pre-merge workflow steps"`; KB-046 2026-11-11-15:04). Unwired on a renamed
   board the blocker returns "task is in 'checking', must be in 'in-review'" instead, so widening the query
   alone would have made the sweep find every card and then reject every card.
 

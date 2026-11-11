@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { FAILED_PRE_MERGE_STEPS_BLOCKER } from "../merge/task-merge.js";
 import {
   classifyProviderError,
   countRecentIdenticalStallEntries,
@@ -371,14 +372,101 @@ describe("getInReviewStallReason capacity suppression (KB-016)", () => {
     expect(signal?.capacity).toEqual({ claimed: 2, maxConcurrent: 2 });
   });
 
-  it("never capacity-suppresses merge-blocker, even saturated (real-defect fence)", () => {
+  /*
+  KB-046: the pre-KB-046 fence test used EXACTLY this fixture shape (a failed pre-merge result under
+  saturation) to pin the old "merge-blocker is never suppressed" contract. KB-046 scopes the
+  exemption to precisely this reason, so the same fixture now asserts the new outcome; the fence
+  for every OTHER merge-blocker reason lives in the tests that follow.
+  */
+  it("marks the failed-pre-merge-step merge-blocker as capacity-suppressed on a saturated board (KB-046)", () => {
     const signal = getInReviewStallReason({
       ...baseTask,
       workflowStepResults: [{ workflowStepId: "WS-1", workflowStepName: "gate", status: "failed", phase: "pre-merge" as const }],
     }, { now: NOW, capacity: saturatedCapacity });
     expect(signal?.code).toBe("merge-blocker");
+    expect(signal?.reason).toBe(FAILED_PRE_MERGE_STEPS_BLOCKER);
+    expect(signal?.suppressedByCapacity).toBe(true);
+    expect(signal?.capacity).toEqual({ claimed: 2, maxConcurrent: 2 });
+  });
+
+  it("does not mark the failed-pre-merge-step merge-blocker when a slot is free", () => {
+    const signal = getInReviewStallReason({
+      ...baseTask,
+      workflowStepResults: [{ workflowStepId: "WS-1", workflowStepName: "gate", status: "failed", phase: "pre-merge" as const }],
+    }, { now: NOW, capacity: freeCapacity });
+    expect(signal?.code).toBe("merge-blocker");
+    expect(signal?.reason).toBe(FAILED_PRE_MERGE_STEPS_BLOCKER);
     expect(signal?.suppressedByCapacity).toBeUndefined();
     expect(signal?.capacity).toBeUndefined();
+  });
+
+  it("stays byte-identical for the failed-pre-merge-step merge-blocker without a capacity context", () => {
+    const signal = getInReviewStallReason({
+      ...baseTask,
+      workflowStepResults: [{ workflowStepId: "WS-1", workflowStepName: "gate", status: "failed", phase: "pre-merge" as const }],
+    }, { now: NOW });
+    expect(signal).toEqual({
+      code: "merge-blocker",
+      reason: FAILED_PRE_MERGE_STEPS_BLOCKER,
+      observedAt: new Date(NOW).toISOString(),
+    });
+  });
+
+  it("marks the failed-pre-merge-step merge-blocker saturated above the cap (claimed > maxConcurrent)", () => {
+    const signal = getInReviewStallReason({
+      ...baseTask,
+      workflowStepResults: [{ workflowStepId: "WS-1", workflowStepName: "gate", status: "failed", phase: "pre-merge" as const }],
+    }, { now: NOW, capacity: { claimed: 5, maxConcurrent: 2 } });
+    expect(signal?.code).toBe("merge-blocker");
+    expect(signal?.suppressedByCapacity).toBe(true);
+    expect(signal?.capacity).toEqual({ claimed: 5, maxConcurrent: 2 });
+  });
+
+  /*
+  KB-046 narrowness fence: every OTHER reachable merge-blocker reason keeps surfacing — unmarked,
+  exact reason asserted — under saturation. The unreachable-through-this-classifier families
+  (column-mismatch, unproven-approval) are structurally excluded by the exact-equality predicate.
+  */
+  it("never capacity-suppresses the incomplete-steps merge-blocker, even saturated", () => {
+    const signal = getInReviewStallReason({
+      ...baseTask,
+      steps: [{ name: "Step 1", status: "in-progress" as const }],
+    }, { now: NOW, capacity: saturatedCapacity });
+    expect(signal?.code).toBe("merge-blocker");
+    expect(signal?.reason).toBe("task has incomplete steps");
+    expect(signal?.suppressedByCapacity).toBeUndefined();
+    expect(signal?.capacity).toBeUndefined();
+  });
+
+  it("never capacity-suppresses the marked-status merge-blocker (retryable error), even saturated", () => {
+    const signal = getInReviewStallReason({
+      ...baseTask,
+      status: "failed",
+      error: "HTTP 503 service unavailable",
+    }, { now: NOW, capacity: saturatedCapacity });
+    expect(signal?.code).toBe("merge-blocker");
+    expect(signal?.reason).toBe("task is marked 'failed': HTTP 503 service unavailable");
+    expect(signal?.suppressedByCapacity).toBeUndefined();
+    expect(signal?.capacity).toBeUndefined();
+  });
+
+  it("never capacity-suppresses the pending-pre-merge-result merge-blocker, even saturated", () => {
+    const signal = getInReviewStallReason({
+      ...baseTask,
+      workflowStepResults: [{ workflowStepId: "WS-1", workflowStepName: "gate", status: "pending", phase: "pre-merge" as const }],
+    }, { now: NOW, capacity: saturatedCapacity });
+    expect(signal?.code).toBe("merge-blocker");
+    expect(signal?.reason).toBe("task has incomplete or failed pre-merge workflow steps");
+    expect(signal?.suppressedByCapacity).toBeUndefined();
+    expect(signal?.capacity).toBeUndefined();
+  });
+
+  it("autoMerge: false still wins over saturation for the failed-pre-merge-step merge-blocker", () => {
+    const signal = getInReviewStallReason({
+      ...baseTask,
+      workflowStepResults: [{ workflowStepId: "WS-1", workflowStepName: "gate", status: "failed", phase: "pre-merge" as const }],
+    }, { now: NOW, autoMerge: false, capacity: saturatedCapacity });
+    expect(signal).toBeUndefined();
   });
 
   it("never capacity-suppresses merge-retries-exhausted or non-retryable-provider-error, even saturated", () => {

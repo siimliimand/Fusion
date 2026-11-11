@@ -1385,6 +1385,8 @@ export {
   PreMergeStepsNotRunError,
   PRE_MERGE_STEPS_NOT_RUN_BLOCKER,
   STALE_CONTENT_APPROVAL_BLOCKER,
+  FAILED_PRE_MERGE_STEPS_BLOCKER,
+  isFailedPreMergeStepsBlocker,
   getTaskHardMergeBlocker,
   getMergeConfirmedFinalizationBlocker,
   getUnfinishedStepTitles,

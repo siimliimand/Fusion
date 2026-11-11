@@ -1,4 +1,4 @@
-import { getTaskMergeBlocker } from "../merge/task-merge.js";
+import { getTaskMergeBlocker, isFailedPreMergeStepsBlocker } from "../merge/task-merge.js";
 import type { Task, TaskLogEntry } from "../types.js";
 
 /*
@@ -48,10 +48,12 @@ export interface InReviewStallSignal {
   code: InReviewStallCode;
   observedAt: string;
   /*
-  FNXC:InReviewStallCapacity 2026-11-06-09:20 (KB-016 / FIX-14):
-  Set ONLY when the caller supplied `context.capacity`, the board is saturated, and the code is a
-  waiting-for-a-slot code. It is absent (never false) when no capacity context is supplied, so
-  callers without the seam stay byte-identical.
+  FNXC:InReviewStallCapacity 2026-11-06-09:20 (KB-016) / 2026-11-11-15:04 (KB-046):
+  Set ONLY when the caller supplied `context.capacity`, the board is saturated, and the signal is
+  capacity-suppressible: a waiting-for-a-slot code, OR (KB-046) a merge-blocker whose reason is
+  EXACTLY the failed-pre-merge-workflow-step blocker. It is absent (never false) when no capacity
+  context is supplied, so callers without the seam stay byte-identical. Merge-blocker reasons other
+  than the failed-pre-merge-step sentence are NEVER marked — they keep surfacing and counting.
   */
   suppressedByCapacity?: boolean;
   capacity?: InReviewStallCapacity;
@@ -77,7 +79,7 @@ export interface InReviewStallContext {
   */
   reviewColumns?: ReadonlySet<string>;
   /*
-  FNXC:InReviewStallCapacity 2026-11-06-09:20 (KB-016 / FIX-14 — the starvation model):
+  FNXC:InReviewStallCapacity 2026-11-06-09:20 (KB-016) / 2026-11-11-15:04 (KB-046 — the starvation model):
   A stall is only evidence of deadlock if the card had room to move. Under a saturated board
   (claimed >= maxConcurrent) the two signals whose ONLY meaning is "the card wants a slot and has
   not got one" — completed-review-status-none (review finished, merge handoff cannot claim a slot)
@@ -86,9 +88,16 @@ export interface InReviewStallContext {
   "In-review stall deadlock" on a 2/2 board and recovered instantly once an operator raised the
   cap, proving the card was healthy.
 
-  The waiting-for-a-slot set is EXACTLY {completed-review-status-none, transient-merge-status-no-owner}.
-  merge-blocker, merge-retries-exhausted, no-worktree-no-merge-confirmed, and
-  non-retryable-provider-error are evidence of real defects and are NEVER capacity-suppressed.
+  KB-046 extends the exemption to ONE merge-blocker reason: the saturated-window sibling incident
+  (same board/window as KB-007, 02:06) surfaced `merge-blocker: task has failed pre-merge workflow
+  steps` on a card whose ONLY reason for not advancing was the saturated cap — the failed gate
+  cannot re-run and the merge cannot proceed while no slot is free. That exact reason is now
+  capacity-suppressed (see applyCapacitySuppression); the failed-pre-merge-step remediation sweep
+  already owns re-triggering the failed gate once a slot frees, so no re-drive is added here.
+
+  Every other merge-blocker reason and the remaining defect-evidence codes
+  (merge-retries-exhausted, no-worktree-no-merge-confirmed, non-retryable-provider-error) are
+  evidence of real defects and are NEVER capacity-suppressed.
 
   Optional, with today's behaviour preserved as the fallback, so a caller that does not pass it
   (read-layer badge hydration never knows the claimed count) is byte-identical. Only the engine
@@ -198,7 +207,7 @@ export const IN_REVIEW_STALL_LOG_PREFIX = "In-review stall surfaced [";
 export const IN_REVIEW_STALL_DEADLOCK_LOG_PREFIX = "In-review stall auto-disposed [";
 export const IN_REVIEW_STALL_TERMINAL_LOG_PREFIX = "In-review stall terminal disposed [";
 /*
-FNXC:InReviewStallCapacity 2026-11-06-09:20 (KB-016): visible capacity-wait marker. Written by the
+FNXC:InReviewStallCapacity 2026-11-06-09:20 (KB-016) / 2026-11-11-15:04 (KB-046): visible capacity-wait marker. Written by the
 engine sweep in place of a surfaced entry for suppressed signals so the wait is observable, not
 silent. It deliberately does NOT start with IN_REVIEW_STALL_LOG_PREFIX, so the
 `countRecentIdenticalStallEntries` scan-break contract treats it as a non-stall entry and resets
@@ -207,9 +216,17 @@ the consecutive identical-stall run (the counter-hygiene mechanism).
 export const IN_REVIEW_STALL_SUPPRESSED_LOG_PREFIX = "In-review stall suppressed [";
 
 /*
-FNXC:InReviewStallCapacity 2026-11-06-09:20 (KB-016): the waiting-for-a-slot code set. Every other
-stall code is evidence of a real defect (failed gate, exhausted retries, missing worktree, terminal
-provider error) and stays surfaceable — and disposable — regardless of board saturation.
+FNXC:InReviewStallCapacity 2026-11-06-09:20 (KB-016) / 2026-11-11-15:04 (KB-046): the capacity-suppressible set.
+Waiting-for-a-slot codes: every meaning of their signal is "the card wants a slot and has not got
+one". KB-046 adds ONE merge-blocker exception: under saturation, a merge-blocker signal whose
+reason is EXACTLY the failed-pre-merge-workflow-step blocker (`isFailedPreMergeStepsBlocker`) is
+capacity-suppressed too — the card could not re-run its failed gate or merge because the board had
+no free slot, so it visibly waits instead of accruing identical-stall counts toward disposal. Every
+OTHER merge-blocker reason (incomplete steps, pending pre-merge result, marked status, and the
+unreachable-through-this-classifier column-mismatch and unproven-approval families) plus the other
+defect-evidence codes (merge-retries-exhausted, no-worktree-no-merge-confirmed,
+non-retryable-provider-error) are evidence of real defects and stay surfaceable — and disposable —
+regardless of board saturation.
 */
 const CAPACITY_WAIT_STALL_CODES: ReadonlySet<InReviewStallCode> = new Set([
   "completed-review-status-none",
@@ -221,7 +238,15 @@ function applyCapacitySuppression(
   context: InReviewStallContext,
 ): InReviewStallSignal {
   const capacity = context.capacity;
-  if (!capacity || !CAPACITY_WAIT_STALL_CODES.has(signal.code)) return signal;
+  /*
+  FNXC:InReviewStallCapacity 2026-11-11-15:04 (KB-046): the merge-blocker exemption gates on BOTH the code
+  and the exact reason — a future arm producing the failed-pre-merge-step sentence under a different
+  code must not silently suppress, and a merge-blocker reason that merely CONTAINS the words
+  "failed" must never classify as this blocker (exact equality only).
+  */
+  const capacityWaitCode = CAPACITY_WAIT_STALL_CODES.has(signal.code);
+  const failedPreMergeSteps = signal.code === "merge-blocker" && isFailedPreMergeStepsBlocker(signal.reason);
+  if (!capacity || (!capacityWaitCode && !failedPreMergeSteps)) return signal;
   if (!(capacity.claimed >= capacity.maxConcurrent)) return signal;
   return {
     ...signal,
@@ -429,11 +454,18 @@ export function getInReviewStallReason(
       }
     }
 
-    return {
+    /*
+    FNXC:InReviewStallCapacity 2026-11-11-15:04 (KB-046): the merge-blocker arm flows through the
+    suppression decision too. Exact-equality inside `applyCapacitySuppression` means only the
+    failed-pre-merge-step sentence can come back marked under saturation; every other
+    `getTaskMergeBlocker` sentence (and the non-retryable-provider-error diversion above, which is
+    a different code by the time it reaches here) passes through byte-identical.
+    */
+    return applyCapacitySuppression({
       code: "merge-blocker",
       reason: mergeBlocker,
       observedAt,
-    };
+    }, context);
   }
 
   return undefined;

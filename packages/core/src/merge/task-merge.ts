@@ -413,6 +413,26 @@ export function isStaleContentApprovalBlocker(blocker: string | undefined | null
   return typeof blocker === "string" && blocker.trim().endsWith(STALE_CONTENT_APPROVAL_BLOCKER);
 }
 
+/*
+FNXC:MergeBlockerReasons 2026-11-11-15:04 (KB-046):
+The failed-pre-merge-step blocker as a named contract, per the FNXC:MergeBlockerReasons rule above:
+give callers the condition, not the sentence. Three sites must agree on this exact reason and today
+match it as an inline literal that can drift — the stall classifier's capacity-suppression predicate
+(in-review-stall.ts), the self-healing failed-pre-merge-step recovery filter (a code-level `!==`
+comparison against the raw string), and this producer's own arm below. KB-046 makes the sentence
+capacity-semantically load-bearing on saturated boards (a stalled card whose ONLY blocker is this
+reason waits visibly instead of counting toward deadlock disposal), so an editorial reword here must
+fail loudly at every match site instead of silently changing which cards get disposed. Exact equality
+only: no prefix, substring, or keyword matching — column-mismatch, unproven-approval,
+incomplete-steps, pending-step, and marked-status reasons must never classify as this blocker.
+*/
+export const FAILED_PRE_MERGE_STEPS_BLOCKER = "task has failed pre-merge workflow steps";
+
+/** True when a `getTaskMergeBlocker` reason is exactly the failed-pre-merge-workflow-step reason. */
+export function isFailedPreMergeStepsBlocker(blocker: string | undefined): boolean {
+  return blocker === FAILED_PRE_MERGE_STEPS_BLOCKER;
+}
+
 export const TASK_DONE_BYPASS_BLOCKER_MESSAGE =
   "done bypass requires merge confirmation or explicit no-commits policy";
 
@@ -547,7 +567,8 @@ export function getTaskMergeBlocker(
       return phase === "pre-merge" && result.status === "failed";
     })
   ) {
-    return "task has failed pre-merge workflow steps";
+    /* FNXC:MergeBlockerReasons 2026-11-11-15:04 (KB-046) — named contract; behavior byte-identical. */
+    return FAILED_PRE_MERGE_STEPS_BLOCKER;
   }
 
   return undefined;

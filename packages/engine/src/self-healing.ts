@@ -30,7 +30,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmdirSy
 import { readFile } from "node:fs/promises";
 import { tmpdir, hostname } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { PRE_MERGE_STEPS_NOT_RUN_BLOCKER, loadWorkspaceConfig, type TaskMoveLanes, resolveColumnFlags, IN_REVIEW_STALL_DEADLOCK_LOG_PREFIX, IN_REVIEW_STALL_LOG_PREFIX, IN_REVIEW_STALL_SUPPRESSED_LOG_PREFIX, IN_REVIEW_STALL_TERMINAL_LOG_PREFIX, allowsAutoMergeProcessing, hasSharedBranchMemberAutoMergeHold, hasUserAutoMergeHold, resolveEffectiveAutoMerge, countRecentIdenticalStallEntries, detectDependencyCycle, detectSelfDefeatingDependency, evaluateNoCommitsNoOpFinalize, evaluateCompletedPromotionFailureProvenance, evaluateSkipBypassTaint, getInReviewStalledSignal, getInReviewStallReason, getPrimaryPrInfo, getStalePausedReviewSignal, getStalePausedTodoSignal, getTaskHardMergeBlocker, getMergeConfirmedFinalizationBlocker, getPostMergeFinalizeBlocker, getRequiredPostMergeEvidenceBlocker, getRequiredPostMergeEvidenceDecision, planConfirmedMergeChecklistReconciliation, getTaskMergeBlocker, isStaleContentApprovalBlocker, resolvePreMergeGateForTask, isEphemeralAgent, isMergeRequestContractShadowEnabled, isWorkspaceTask, isSharedBranchGroupMemberIntegration, isLiveSharedBranchGroupMemberIntegration, isNearDuplicateCanonicalInactive, resolveExplicitDuplicateMarker, flagTriageDuplicate, isTriageDuplicateKeepAcknowledged, resolveMaxAutoMergeRetries, resolveMaxConcurrentSetting, resolveOptionalStepRevisionBudget, resolveOptionalReviewRevisionBudget, getBuiltinWorkflow, isBuiltinWorkflowId, resolveWorkflowIrForTask, resolveWorkflowIrForTaskWithProvenance, resolveRequiredPreMergeStepIds, resolveReboundTarget, columnsWithFlag, resolveLifecycleColumns, resolveTaskLifecycleColumns, isWipColumnRole, isReviewColumnRole, isTerminalColumnRole, workflowHasColumn, planLegacyAdoption, resolveOrphanedPendingStepResults, resolveUnprovenReviewApproval, classifyReviewLease, PLAN_REVIEW_LEASE_STALENESS_MS, DEFAULT_MAX_POST_REVIEW_FIXES, ACTIVE_WORKFLOW_WORK_ITEM_STATES, AWAITING_APPROVAL_PAUSE_REASON, type Agent, type AgentStore, type ChatStore, type MessageStore, type TaskStore, type MoveTaskOptions, type Settings, type Task, type MergeDetails, type TaskPriority, type MergeResult, type WorkflowStepResult, type WorkflowIr, type WorkflowIrV2, type InReviewStallCapacity,
+import { PRE_MERGE_STEPS_NOT_RUN_BLOCKER, isFailedPreMergeStepsBlocker, loadWorkspaceConfig, type TaskMoveLanes, resolveColumnFlags, IN_REVIEW_STALL_DEADLOCK_LOG_PREFIX, IN_REVIEW_STALL_LOG_PREFIX, IN_REVIEW_STALL_SUPPRESSED_LOG_PREFIX, IN_REVIEW_STALL_TERMINAL_LOG_PREFIX, allowsAutoMergeProcessing, hasSharedBranchMemberAutoMergeHold, hasUserAutoMergeHold, resolveEffectiveAutoMerge, countRecentIdenticalStallEntries, detectDependencyCycle, detectSelfDefeatingDependency, evaluateNoCommitsNoOpFinalize, evaluateCompletedPromotionFailureProvenance, evaluateSkipBypassTaint, getInReviewStalledSignal, getInReviewStallReason, getPrimaryPrInfo, getStalePausedReviewSignal, getStalePausedTodoSignal, getTaskHardMergeBlocker, getMergeConfirmedFinalizationBlocker, getPostMergeFinalizeBlocker, getRequiredPostMergeEvidenceBlocker, getRequiredPostMergeEvidenceDecision, planConfirmedMergeChecklistReconciliation, getTaskMergeBlocker, isStaleContentApprovalBlocker, resolvePreMergeGateForTask, isEphemeralAgent, isMergeRequestContractShadowEnabled, isWorkspaceTask, isSharedBranchGroupMemberIntegration, isLiveSharedBranchGroupMemberIntegration, isNearDuplicateCanonicalInactive, resolveExplicitDuplicateMarker, flagTriageDuplicate, isTriageDuplicateKeepAcknowledged, resolveMaxAutoMergeRetries, resolveMaxConcurrentSetting, resolveOptionalStepRevisionBudget, resolveOptionalReviewRevisionBudget, getBuiltinWorkflow, isBuiltinWorkflowId, resolveWorkflowIrForTask, resolveWorkflowIrForTaskWithProvenance, resolveRequiredPreMergeStepIds, resolveReboundTarget, columnsWithFlag, resolveLifecycleColumns, resolveTaskLifecycleColumns, isWipColumnRole, isReviewColumnRole, isTerminalColumnRole, workflowHasColumn, planLegacyAdoption, resolveOrphanedPendingStepResults, resolveUnprovenReviewApproval, classifyReviewLease, PLAN_REVIEW_LEASE_STALENESS_MS, DEFAULT_MAX_POST_REVIEW_FIXES, ACTIVE_WORKFLOW_WORK_ITEM_STATES, AWAITING_APPROVAL_PAUSE_REASON, type Agent, type AgentStore, type ChatStore, type MessageStore, type TaskStore, type MoveTaskOptions, type Settings, type Task, type MergeDetails, type TaskPriority, type MergeResult, type WorkflowStepResult, type WorkflowIr, type WorkflowIrV2, type InReviewStallCapacity,
 
   resolveNearDuplicateCanonicalFlags,
   LEGACY_COLUMN_IDS_BY_ROLE,
@@ -10704,7 +10704,9 @@ export class SelfHealingManager extends SelfHealingGitEvidence {
       FAILED pre-merge review step was never auto-revived and stayed parked until a human noticed.
 
       The activation check mattered here more than anywhere so far. This sweep's filter asks
-      `blocker !== "task has failed pre-merge workflow steps"` — an EXACT STRING match. Unwired on a
+      `isFailedPreMergeStepsBlocker(blocker)` — an EXACT match against the named contract
+      `FAILED_PRE_MERGE_STEPS_BLOCKER` (formerly the inline literal
+      `blocker !== "task has failed pre-merge workflow steps"`; KB-046 2026-11-11-15:04). Unwired on a
       renamed board the blocker instead returns "task is in 'checking', must be in 'in-review'", which is
       not that string, so every card would be rejected the moment the widened query started finding them.
       Wiring the blocker is therefore part of this conversion, not a follow-up.
@@ -10928,12 +10930,13 @@ export class SelfHealingManager extends SelfHealingGitEvidence {
         // Merge must be blocked *specifically* by the failed pre-merge step —
         // not by an unrelated condition (incomplete steps, etc.) that is
         // already handled by a dedicated scan.
-        /* Wired: this comparison is an EXACT STRING match, so an unwired blocker returning
+        /* Wired: this comparison is an EXACT match (isFailedPreMergeStepsBlocker, the
+           FAILED_PRE_MERGE_STEPS_BLOCKER named contract — KB-046 2026-11-11-15:04), so an unwired blocker returning
            "task is in '<lane>', must be in 'in-review'" would reject every card on a renamed board. */
         const blocker = getTaskMergeBlocker(task, {
           reviewColumns: reviewLanesByTask.get(task.id) ?? new Set(["in-review"]),
         });
-        if (!parkedRemediationFailure && blocker !== "task has failed pre-merge workflow steps") return false;
+        if (!parkedRemediationFailure && !isFailedPreMergeStepsBlocker(blocker)) return false;
 
         return true;
       });
@@ -11278,9 +11281,20 @@ export class SelfHealingManager extends SelfHealingGitEvidence {
         non-surfaced entry, so `countRecentIdenticalStallEntries`' scan-break contract resets the
         identical-stall run (counter hygiene); and once capacity frees, the re-drive branch below
         hands the card its chance to advance before any disposal is even countable.
-        Merge-blocker, merge-retries-exhausted, no-worktree-no-merge-confirmed, and
-        non-retryable-provider-error signals are NEVER capacity-suppressed: they are evidence of
-        real defects (the classifier marks only the two waiting-for-a-slot codes).
+        Merge-retries-exhausted, no-worktree-no-merge-confirmed, and non-retryable-provider-error
+        signals are NEVER capacity-suppressed: they are evidence of real defects. Merge-blocker
+        signals are capacity-suppressed ONLY for the exact failed-pre-merge-step reason (below).
+
+        FNXC:InReviewStallCapacity 2026-11-11-15:04 (KB-046) — the merge-blocker narrow exception:
+        the classifier ALSO marks a merge-blocker signal under saturation when its reason is
+        EXACTLY the failed-pre-merge-step blocker (`isFailedPreMergeStepsBlocker`). This branch stays
+        GENERIC on `suppressedByCapacity` and needs no change: a suppressed failed-pre-merge-step
+        card writes this same deduplicated line, emits this same bounded audit event (its metadata
+        necessarily reads `code: "merge-blocker"` because the classifier is the single choke point
+        that marks it), accrues no counter, and is never disposed while saturated. The
+        failed-pre-merge-step remediation sweep (recoverReviewTasksWithFailedPreMergeSteps, whose
+        exact-match filter now consumes the same named contract) owns re-triggering the failed gate;
+        no re-drive is added here. Every OTHER merge-blocker reason still surfaces and counts.
         */
         if (signal.suppressedByCapacity === true && stallCapacity) {
           const logEntries = task.log ?? [];
