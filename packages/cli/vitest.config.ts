@@ -114,17 +114,26 @@ const quarantinedCliTests: string[] = [
   */
   /*
   FNXC:CliTests 2026-11-06-08:51:
-  KB-013 quarantines dashboard-concurrency-settings.test.ts on the SECOND sighting of the same
+  KB-013 quarantined dashboard-concurrency-settings.test.ts on the SECOND sighting of the same
   identity recorded in docs/solutions/test-failures/suite-only-flakes-observed-register.md entry 24
-  (first sighting by KB-003, 2026-11-06): 'drives unset live settings through every runDashboard TUI
-  callback' times out at the default 5000ms (line 213) only in the parallel changed-only lane under
-  CPU oversubscription, while focused file runs pass. No causal mechanism exists in the concurrent
-  sd_notify changes (synchronous early-return no-ops without NOTIFY_SOCKET). Quarantined on sight
-  per the deletion ratchet instead of widening testTimeout, adding retries, or changing worker
-  budgets. Not an engine-core merge-gate eviction; the explicitly-requested-file bypass below keeps
-  focused diagnosis runnable.
+  (first sighting by KB-003, 2026-11-06): the unset-variant settings drive timed out at the default
+  5000ms (line 213) only in the parallel changed-only lane under CPU oversubscription, while focused
+  file runs passed. Quarantined on sight per the deletion ratchet instead of widening testTimeout,
+  adding retries, or changing worker budgets. Not an engine-core merge-gate eviction.
+
+  FNXC:CliTests 2026-11-11-16:06:
+  KB-038 rescues dashboard-concurrency-settings.test.ts before its 2026-11-20 deletion deadline.
+  Phase-timed attribution measured the first dispatch at 3424ms focused, dominated by a one-time
+  3140ms discoverAndLoadExtensions module compile (the self-extension graph) plus the real
+  update-check settings read racing a 3s timer and a real resolveProject filesystem walk — all
+  inside the default 5s testTimeout, so CPU-starved parallel lanes pushed the first test over the
+  budget twice. The suite now seams all three startup demands deterministically (pi-coding-agent
+  discovery returns an empty deterministic result; isUpdateCheckEnabled resolves false;
+  resolveProject returns the harness fake root) with every assertion unchanged; per-test wall
+  dropped to 157-415ms and a mutation check proved the suite still fails on a real mapping
+  regression. Exclusion and ledger row removed in lockstep; skills-get (FN-9425) stays quarantined.
+  Do not re-add either unless a new root cause is quarantined under the deletion ratchet.
   */
-  "src/commands/__tests__/dashboard-concurrency-settings.test.ts",
   "src/commands/__tests__/skills-get.test.ts",
 ];
 
