@@ -31,7 +31,7 @@ When a package is flagged:
 
 Fusion currently keeps the reviewed decision set documented in the root `package.json` `pnpm` block and mirrored in `pnpm-workspace.yaml`, which is the effective pnpm v10.33 install-time config read by `pnpm install`.
 
-The guard test `node --test scripts/__tests__/pnpm-build-scripts-config.test.mjs` (also covered by `pnpm test:scripts`) enforces that the reviewed dependencies stay categorized, deduped, and non-overlapping so the ignored-build-scripts warning cannot silently return.
+The guard test `node --test scripts/__tests__/pnpm-build-scripts-config.test.mjs` (also covered by `pnpm test:scripts`; targeted: `pnpm test:scripts -- scripts/__tests__/pnpm-build-scripts-config.test.mjs`) enforces that the reviewed dependencies stay categorized, deduped, and non-overlapping so the ignored-build-scripts warning cannot silently return.
 
 ### Build workspace packages
 

@@ -990,6 +990,15 @@ pnpm test:scripts
 node --test scripts/__tests__/*.test.mjs
 ```
 
+To verify a single guard suite inside a bounded verification window, target it through the script-test runner (both forms forward the file unchanged):
+
+```bash
+node scripts/run-script-tests.mjs scripts/__tests__/<guard>.test.mjs
+pnpm test:scripts -- scripts/__tests__/<guard>.test.mjs
+```
+
+Bare `pnpm test:scripts` (no file arguments) sweeps every scripts suite sequentially (~90 files) and exceeds the bounded verification window on a cold tree — during KB-038 the sweep was killed mid-run, orphaning probe fixtures on disk — so per-task verification of a specific guard MUST use the targeted form. Forwarded paths are existence-validated by the runner before any child spawns: a nonexistent path fails fast with `[run-script-tests] forwarded path does not exist: <path>` and exit 1. The contract is guarded by `scripts/__tests__/run-script-tests.test.mjs`; its deliberate-failure probe fixture lives under `fixtures/` with a non-`.test.mjs` name, so the default sweep and directory discovery can never pick it up.
+
 For a single Vitest file, use package-local `exec vitest`:
 
 ```bash
