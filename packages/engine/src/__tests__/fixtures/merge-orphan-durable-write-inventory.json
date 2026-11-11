@@ -288,6 +288,7 @@
     "packages/engine/src/util/notifier.ts",
     "packages/engine/src/util/repeat-suppressed-log.ts",
     "packages/engine/src/util/run-audit.ts",
+    "packages/engine/src/util/runtime-stall-tracker.ts",
     "packages/engine/src/util/web-fetch.ts",
     "packages/engine/src/workflow-node-runners/code-runner.ts",
     "packages/engine/src/workflow-node-runners/exit-gate-runner.ts",
@@ -11047,7 +11048,7 @@
       "enclosingSymbolPath": "releaseFileScopeWaitingContinuations>transitioned",
       "writer": "store.transitionWorkflowWorkItem",
       "ordinal": 1,
-      "lineHint": 811,
+      "lineHint": 812,
       "owningEntryPoint": "indeterminate",
       "reachableDataStates": [
         "No call edge from runAiMerge, landWorkspaceTask, or landOneRepo"
@@ -11067,7 +11068,7 @@
       "enclosingSymbolPath": "runCapacityWakePass>transitioned",
       "writer": "store.transitionWorkflowWorkItem",
       "ordinal": 1,
-      "lineHint": 894,
+      "lineHint": 895,
       "owningEntryPoint": "indeterminate",
       "reachableDataStates": [
         "No call edge from runAiMerge, landWorkspaceTask, or landOneRepo"
@@ -11087,7 +11088,7 @@
       "enclosingSymbolPath": "invalidateMismatchedFileScopeLeaseRelease",
       "writer": "store.updateTaskAtomic",
       "ordinal": 1,
-      "lineHint": 725,
+      "lineHint": 726,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "scheduler-owned receipt clearing outside the orphan-merge frontier"
@@ -11107,7 +11108,7 @@
       "enclosingSymbolPath": "revalidateFileScopeLeaseReleases>revalidated",
       "writer": "store.updateTaskAtomic",
       "ordinal": 1,
-      "lineHint": 738,
+      "lineHint": 739,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "scheduler-owned receipt clearing outside the orphan-merge frontier"
@@ -11127,7 +11128,7 @@
       "enclosingSymbolPath": "recoverApprovedStrandedAiMergeCommit>finalized",
       "writer": "finalizeProvenAutoMergeTask",
       "ordinal": 1,
-      "lineHint": 14286,
+      "lineHint": 14468,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"
@@ -11147,7 +11148,7 @@
       "enclosingSymbolPath": "recoverMergedReviewTasks>finalization",
       "writer": "finalizeProvenAutoMergeTask",
       "ordinal": 1,
-      "lineHint": 13148,
+      "lineHint": 13330,
       "owningEntryPoint": "other",
       "reachableDataStates": [
         "unobservable:closure-wide production fixture pending"

@@ -42,6 +42,16 @@ type LedgerRow = { file: string; line: number; bucket: Bucket; expression: strin
  * or rows were altered. Upstream row 40 of fn-9475-full-suite-shard-disposition.md (run
  * 37215243086, 2026-10-04) recorded the same census failure class before the 2026-11-06 push
  * batch, so this drift is not attributable to KB-003/KB-005/KB-006/KB-011.
+ *
+ * FNXC:MemoryMcpCoverage 2026-11-06-19:53:
+ * KB-036 realigned the triage A row again after KB-010 35f61410a (2026-11-06 memory-wedge fix)
+ * inserted six lines above the call in triage.ts: 3633→3639 (Full Suite run 42271750266 re-sighted
+ * the census failure in engine shard 2, job 128077786065). Position-only repair, same protocol as
+ * the KB-025 block above: a source scan over all five roots produced equal 37-entry arrays on both
+ * sides of the bijection with the single pair triage.ts 3633→3639, and line 3639 still reads
+ * `resolveMcpServersForStore(this.store)` while the KB-010 parent commit had the identical call at
+ * 3633 — the call moved, it did not change. No needles, scan roots, assertions, rows, bucket
+ * semantics, or row shapes were altered; every other row stays byte-identical.
  */
 const LEDGER: LedgerRow[] = [
   ["packages/engine/src/executor/resolve-mcp-servers.ts",32,"A","deps.store","TaskStore","executor TaskStore"],
@@ -51,7 +61,7 @@ const LEDGER: LedgerRow[] = [
   ["packages/engine/src/merge/merger-ai.ts",639,"A","store","TaskStore","merger AI TaskStore"],
   ["packages/engine/src/merge/pr-response-run-ops.ts",112,"A","store","TaskStore","PR response TaskStore"],
   ["packages/engine/src/agent-heartbeat.ts",210,"A","taskStore","nullable-root","heartbeat accepts a nullable root"],
-  ["packages/engine/src/triage.ts",3633,"A","this.store","TaskStore","triage TaskStore"],
+  ["packages/engine/src/triage.ts",3639,"A","this.store","TaskStore","triage TaskStore"],
   ["packages/engine/src/scheduling/cron-runner.ts",1073,"A","store","TaskStore","cron TaskStore"],
   ["packages/engine/src/missions/mission-execution-loop.ts",1125,"A","this.taskStore","TaskStore","mission TaskStore"],
   ["packages/engine/src/agents/agent-reflection.ts",161,"A","this.taskStore","TaskStore","reflection TaskStore"],
