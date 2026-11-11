@@ -1661,6 +1661,106 @@ export function existingChangedTestFilesInPackage(changedFiles, pkgDir, { projec
 }
 
 /*
+FNXC:TestInfrastructure 2026-11-11-15:02:
+KB-047: bounded fixture-to-consumer mapping for the memory-envelope wide-fan-out
+branch. A regenerated DATA fixture (JSON inventory snapshot, TS fixture module,
+snapshot text) is a changed non-test file that usually has NO directly-changed
+test companion, so the guard resolved the affected lane to gate-only and the
+fixture's consumer test never ran locally (KB-019: the FN-8923 drift guard's
+pinned fixture changed while the merge-gate allow-list does not contain that
+guard, giving zero local affected-lane coverage). The mapper below finds the
+test files inside the SAME package that textually reference a changed fixture
+and hands them to the affected lane alongside the directly-changed set.
+
+Deliberate trade: the plain substring model over-matches (a test mentioning the
+fixture name in prose counts as a consumer) because over-testing is the safe
+direction at this lane — the bound is MAX_MAPPED_FIXTURE_TEST_FILES, an
+all-or-nothing refusal (never a truncation) that keeps the wide-fan-out
+wall-clock contract intact. Measured reference point: 415 engine test files
+mention `self-healing`, so a hub-source edit MUST keep today's gate-only
+delegation; a fixture reference set that broad exceeds the cap and refuses.
+Signals are the full repo-relative path, the basename with extension, and the
+basename without extension (matches extension-less import specifiers such as a
+TS fixture module imported as `./fixtures/six-column-workflow-ir`). A fixture
+with zero referencing tests maps nothing, so the existing gate-only delegation
+path is preserved unchanged. Only the memory-envelope branch wires this —
+non-envelope scoped packages keep native `vitest --changed`, whose module graph
+already tracks data-file imports.
+*/
+/**
+ * Cap on fixture-mapped consumer test files added to the affected lane per
+ * package run. Above this the mapped expansion is refused entirely and the
+ * lane keeps its gate-only delegation (all-or-nothing; never truncated).
+ * @type {number}
+ */
+export const MAX_MAPPED_FIXTURE_TEST_FILES = 25;
+
+/**
+ * Deterministic substring signals used to detect whether a test file reads a
+ * changed non-test (data) file. Order: full repo-relative path, basename with
+ * extension, basename without extension. Empty signals (e.g. a basename that
+ * is all-extension) are dropped so no signal degenerates into match-anything.
+ * @param {string} repoRelPath  repo-relative path of the changed data file
+ * @returns {string[]}
+ */
+export function fixtureReferenceSignals(repoRelPath) {
+  const basename = path.basename(repoRelPath);
+  const withoutExtension = basename.replace(/\.[^./]+$/, "");
+  return [...new Set([repoRelPath, basename, withoutExtension])].filter((signal) => signal.length > 0);
+}
+
+/**
+ * Map changed non-test data files to the existing test files inside `pkgDir`
+ * that reference them, bounded by `maxMappedTests`. Returns ALL-or-nothing:
+ * when the unique reference set exceeds the cap the mapped expansion is
+ * refused wholesale ({ mapped: [], exceededCap: true }) so the caller keeps
+ * its gate-only delegation instead of reintroducing wide fan-out.
+ * @param {string[]|null|undefined} changedNonTestFiles  repo-relative diff paths (normally
+ *   `changedSourceFilesAffectingPackage` output, already filtered; re-filtered defensively here)
+ * @param {string} pkgDir  repo-relative package dir (e.g. "packages/engine")
+ * @param {{ projectRoot?: string, maxMappedTests?: number }} [opts]
+ * @returns {{ mapped: string[], exceededCap: boolean }}
+ */
+export function findFixtureConsumerTests(
+  changedNonTestFiles,
+  pkgDir,
+  { projectRoot = rootDir, maxMappedTests = MAX_MAPPED_FIXTURE_TEST_FILES } = {},
+) {
+  const signals = [];
+  for (const file of changedNonTestFiles ?? []) {
+    if (isTestFilePath(file) || isTestIrrelevantRootPath(file)) continue;
+    signals.push(...fixtureReferenceSignals(file));
+  }
+  if (signals.length === 0) return { mapped: [], exceededCap: false };
+
+  // One bounded walk of the package dir for candidate consumer test files;
+  // each candidate is read exactly once and cached for every changed file's
+  // signals. The existsSync filter mirrors existingChangedTestFilesInPackage's
+  // deletion rule, and a per-file read error is a non-match so one unreadable
+  // file cannot crash the affected lane.
+  const candidateTestFiles = fgSync(`${pkgDir}/**`, {
+    cwd: projectRoot,
+    dot: false,
+    onlyFiles: true,
+    unique: true,
+  }).filter((file) => isTestFilePath(file) && existsSync(path.join(projectRoot, file)));
+
+  const matched = new Set();
+  for (const candidate of candidateTestFiles) {
+    let content;
+    try {
+      content = readFileSync(path.join(projectRoot, candidate), "utf8");
+    } catch {
+      continue;
+    }
+    if (signals.some((signal) => content.includes(signal))) matched.add(candidate);
+  }
+
+  if (matched.size > maxMappedTests) return { mapped: [], exceededCap: true };
+  return { mapped: [...matched].sort(), exceededCap: false };
+}
+
+/*
 FNXC:TestInfrastructure 2026-06-25-14:30:
 Why this guard exists (root cause of "pnpm test takes >15min and gets killed"):
 A heavy memory-envelope package (@fusion/engine, @fusion/dashboard) runs its
@@ -1686,6 +1786,14 @@ merge-gate suite that already ran first in changed mode -- the same "delegate to
 the gate" philosophy as the reverse-dependent blast cap. `pnpm test:full`
 remains the explicit full sweep. This keeps the bounded path actually bounded
 without widening any timeout, adding retries, or raising worker/concurrency.
+
+FNXC:TestInfrastructure 2026-11-11-15:02:
+KB-047 extends the caller's contract for DATA-file diffs: the changed non-test
+files this function returns are additionally mapped to in-package test files
+that reference them (bounded by MAX_MAPPED_FIXTURE_TEST_FILES, all-or-nothing
+refusal above the cap), so a fixture-only regeneration runs its consumer test
+in the affected lane instead of silently delegating to gate-only. See the FNXC
+block on findFixtureConsumerTests for the substring over-match trade.
 */
 export function changedSourceFilesAffectingPackage(
   packageName,
@@ -1959,7 +2067,7 @@ export async function main(argv = process.argv.slice(2)) {
         // on a file that no longer exists. An all-deletions diff yields an empty
         // list, which falls into the same delegate-to-gate `continue` below as
         // the no-changed-tests case (FNXC:TestInfrastructure 2026-06-26-09:15).
-        explicitChangedTestFiles = existingChangedTestFilesInPackage(changedFiles, pkgDir);
+        const directChanged = existingChangedTestFilesInPackage(changedFiles, pkgDir);
         notFullyTestedPackages.add(pkg);
         // FNXC:TestInfrastructure 2026-06-26-09:15: the gate re-covers a delegated
         // engine lane (curated engine-core subset) but runs NO dashboard tests, so
@@ -1972,6 +2080,40 @@ export async function main(argv = process.argv.slice(2)) {
           ? "delegating wider `vitest --changed` coverage to the merge-gate suite (curated engine-core subset ran above)."
           : `the merge gate does NOT run ${pkg} tests, so this wider coverage is NOT re-run here; ` +
             "CI full-suite.yml (non-blocking, on push to main) is the backstop. Run `pnpm test:full` for the full sweep.";
+        /*
+        FNXC:TestInfrastructure 2026-11-11-15:02:
+        KB-047 fixture-to-consumer mapping: a regenerated DATA fixture is a
+        changed non-test file that usually has NO directly-changed test
+        companion, so the guard used to resolve this lane to gate-only and the
+        fixture's consumer test never ran locally (KB-019: the FN-8923 drift
+        guard is not in the merge-gate allow-list, so gate-only meant ZERO local
+        coverage). Map each changed fixture to the in-package test files that
+        reference it and run those consumers here, bounded by
+        MAX_MAPPED_FIXTURE_TEST_FILES: an over-cap reference set (hub-source-
+        style edit) refuses the mapped expansion wholesale and keeps today's
+        gate-only delegation. Non-envelope scoped packages are intentionally NOT
+        wired: their native `vitest --changed` module graph already tracks
+        data-file imports. A mapped lane stays partial coverage — the
+        unconditional notFullyTestedPackages.add above keeps it out of the
+        pass cache.
+        */
+        const consumers = findFixtureConsumerTests(wideSource, pkgDir, { projectRoot: rootDir });
+        if (consumers.exceededCap) {
+          const capLog = gateCovered ? console.log : console.warn;
+          capLog(
+            `[test-changed] ${pkg}: more than MAX_MAPPED_FIXTURE_TEST_FILES=${MAX_MAPPED_FIXTURE_TEST_FILES} test files ` +
+              `reference the changed data file(s); refusing the fixture-mapped expansion to keep this lane bounded ` +
+              `(hub-source-style edit), running only directly-changed test file(s); ${delegationNote}`,
+          );
+        }
+        const mapped = consumers.exceededCap ? [] : consumers.mapped.filter((file) => !directChanged.includes(file));
+        if (mapped.length > 0) {
+          console.log(
+            `[test-changed] ${pkg}: mapped ${mapped.length} non-changed test file(s) reading the changed data file(s): ` +
+              `${mapped.map((file) => path.basename(file)).join(", ")}`,
+          );
+        }
+        explicitChangedTestFiles = [...directChanged, ...mapped];
         if (explicitChangedTestFiles.length === 0) {
           const log = gateCovered ? console.log : console.warn;
           log(
@@ -1982,8 +2124,12 @@ export async function main(argv = process.argv.slice(2)) {
           continue;
         }
         const log = gateCovered ? console.log : console.warn;
+        const runSetDesc =
+          mapped.length > 0
+            ? `${directChanged.length} directly-changed + ${mapped.length} fixture-mapped`
+            : `${explicitChangedTestFiles.length} directly-changed`;
         log(
-          `[test-changed] ${pkg}: changed non-test source detected; running ONLY the ${explicitChangedTestFiles.length} directly-changed test file(s); ` +
+          `[test-changed] ${pkg}: changed non-test source detected; running ONLY the ${runSetDesc} test file(s); ` +
             delegationNote,
         );
       }

@@ -67,3 +67,7 @@ The focused guard still requires exact call-site/fingerprint bijection and final
 ## Hosted-evidence rule
 
 This local verification is not a hosted rerun. Record a later hosted pass only with its run ID and URL, source SHA, shard/job identity, retained artifact ID and digest, and the exact result of the named unchanged-rebuild assertion. Do not infer a hosted pass from this local result or from artifact metadata alone.
+
+## Follow-up (KB-047, 2026-11-11): the resolver now covers this repair shape automatically
+
+The changed-test resolver gap this disposition recorded — a fixture-plus-markdown diff resolving to gate-only so the FN-8923 drift guard got no local affected-lane coverage — is closed. `scripts/test-changed.mjs` now maps changed non-test data files to the test files inside the same package that reference them and runs those consumers in the affected lane when the memory-envelope wide-fan-out guard fires, bounded by `MAX_MAPPED_FIXTURE_TEST_FILES = 25` (an over-cap reference set refuses the mapped expansion and keeps gate-only delegation). A later regeneration of `merge-orphan-durable-write-inventory.json` therefore runs `merge-orphan-durable-write-inventory-drift.test.ts` locally, with a mapping line in the verification output naming the consumer — no explicit focused run needed for the fixture-only repair shape. This note records resolver behavior only; it does not change the historical sections above, and gate admission for the drift guard remains the separate evidence-gated decision described in the Do-NOT fences of that task.

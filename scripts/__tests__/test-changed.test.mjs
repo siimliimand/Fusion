@@ -47,6 +47,9 @@ import {
   isTestFilePath,
   changedSourceFilesAffectingPackage,
   existingChangedTestFilesInPackage,
+  fixtureReferenceSignals,
+  findFixtureConsumerTests,
+  MAX_MAPPED_FIXTURE_TEST_FILES,
   resolveRepoRoot,
   GATE_COVERED_MEMORY_ENVELOPE_PACKAGES,
   SCOPED_AFFECTED_MEMORY_ENVELOPES,
@@ -81,6 +84,26 @@ const scriptModulePath = path.resolve(path.dirname(thisFile), "..", "test-change
 function pkgMap(entries) {
   return new Map(entries);
 }
+
+/*
+FNXC:TestInfrastructure 2026-11-11-15:02:
+KB-047 baseline repair (pre-existing deterministic suite cancellation, node
+v22.14.0): the budget-timeout tests below used to pass `new Promise(() => {})`
+stubs into runObservedStage/runMaybeIsolated races whose timeout is unref'd.
+A SECOND such race while an earlier stub promise is still pending leaves the
+event loop empty with pending promises, and node's test runner then cancels the
+current and all subsequent tests ("Promise resolution is still pending but the
+event loop has already resolved") — deterministically killing tests 77+ of this
+file. A stub that settles AFTER the budget window via a ref'd timer keeps the
+loop alive while pending and changes no assertion: the budget timeout still
+wins the race and assert.rejects still requires the exact stage-budget error.
+*/
+const BUDGET_STUB_SETTLE_MS = 50; // far above every 5ms stage budget used below
+/**
+ * Stub for work that loses a budget race: settles only after the budget window
+ * (ref'd timer so the loop never drains while it is pending).
+ */
+const budgetRaceStub = () => new Promise((resolve) => setTimeout(resolve, BUDGET_STUB_SETTLE_MS));
 
 /** Build a reverse Map<pkgName, dir> for testing. */
 function dirByName(entries) {
@@ -368,7 +391,7 @@ test("@fusion/core is a wide-fan-out memory-envelope package but is NOT gate-cov
   // It must be bounded (guard applies) ...
   assert.ok(
     Object.keys(SCOPED_AFFECTED_MEMORY_ENVELOPES).includes(CORE_SCOPED_AFFECTED_PACKAGE),
-    "core must be a memory-envelope package so the wide-fan-out guard runs only directly-changed core tests",
+    "core must be a memory-envelope package so the wide-fan-out guard runs only directly-changed (or fixture-mapped) core tests",
   );
   // ... yet must NOT claim gate coverage (the merge gate runs no core suite),
   // so a delegated core lane warns loudly instead of reporting a false green.
@@ -1174,7 +1197,7 @@ test("createIsolatedHomeEnv: records raw/realpath basenames in allow-list set", 
 test("runObservedStage: reports a named bounded setup timeout instead of silently waiting", async () => {
   const lines = [];
   await assert.rejects(
-    runObservedStage("isolation-before", () => new Promise(() => {}), {
+    runObservedStage("isolation-before", budgetRaceStub, {
       budgetMs: 5,
       log: (line) => lines.push(line),
     }),
@@ -1221,7 +1244,7 @@ test("runMaybeIsolated: bounded before-check failure prevents gate launch", asyn
     runMaybeIsolated("pnpm", ["test:gate"], {
       env: { ...process.env, FUSION_TEST_DISABLE_ISOLATION_GUARD: "0" },
       stageBudgetMs: 5,
-      runIsolationCheckFn: () => new Promise(() => {}),
+      runIsolationCheckFn: budgetRaceStub,
       runWatchedTestFn: async () => events.push("gate"),
       pruneHomesFn: () => events.push("prune-homes"),
       pruneWorkersFn: () => events.push("prune-workers"),
@@ -1258,7 +1281,7 @@ test("preparePreGateEnvironment: bounded skill sync names the blocked production
       stageBudgetMs: 5,
       stageLog: (line) => lines.push(line),
       isSkillSyncCheckCachedFn: () => false,
-      runSkillSyncFn: () => new Promise(() => {}),
+      runSkillSyncFn: budgetRaceStub,
       prepareArtifactsFn: async () => {
         throw new Error("must not prepare artifacts after blocked skill sync");
       },
@@ -1277,7 +1300,7 @@ test("preparePreGateEnvironment: bounded artifact setup names the blocked produc
       stageBudgetMs: 5,
       stageLog: (line) => lines.push(line),
       isSkillSyncCheckCachedFn: () => true,
-      prepareArtifactsFn: () => new Promise(() => {}),
+      prepareArtifactsFn: budgetRaceStub,
       createIsolatedHomeEnvFn: async () => {
         throw new Error("must not create HOME after blocked artifacts");
       },
@@ -1298,7 +1321,7 @@ test("preparePreGateEnvironment: bounded isolated HOME creation fails before a g
       stageLog: (line) => lines.push(line),
       isSkillSyncCheckCachedFn: () => true,
       prepareArtifactsFn: async () => {},
-      createIsolatedHomeEnvFn: () => new Promise(() => {}),
+      createIsolatedHomeEnvFn: budgetRaceStub,
     }),
     /stage=isolated-home-create exceeded budget 5ms/,
   );
@@ -1801,6 +1824,152 @@ test("integration: real no-change normal entry path reaches the requested gate a
   }
 });
 
+/*
+FNXC:TestInfrastructure 2026-11-11-15:02:
+KB-047 harness: a synthetic repo with one memory-envelope package (@fusion/engine,
+matched literally by partitionScopedAffectedPackages) whose drift-guard-style test
+reads a data fixture — the KB-019 repro shape where a fixture-only diff used to
+resolve the affected lane to gate-only with zero local coverage (the real guard is
+absent from the engine-core gate allow-list). With opts.extraConsumers > 0,
+additional committed test files also mention the fixture basename to push the
+reference set over MAX_MAPPED_FIXTURE_TEST_FILES. The fixture-only regeneration
+lands as a SECOND commit on a `work` branch so merge-base(HEAD, main) stays at the
+first commit and changedFilesSince registers the committed fixture diff — the same
+base...HEAD diff shape as a real task branch ahead of its base (a dirty tree would
+not register).
+*/
+function makeFixtureGuardRepo(dir, { extraConsumers = 0 } = {}) {
+  git(dir, ["init", "-q"]);
+  git(dir, ["config", "user.email", "t@t.t"]);
+  git(dir, ["config", "user.name", "t"]);
+  git(dir, ["branch", "-M", "main"]);
+  writeFileSync(path.join(dir, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+  writeFileSync(path.join(dir, "tsconfig.base.json"), "{}\n");
+  writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "test-fixture-guard", private: true }, null, 2));
+  writeFileSync(path.join(dir, "pnpm-workspace.yaml"), "packages:\n  - 'packages/*'\n");
+  mkdirSync(path.join(dir, ".changeset"), { recursive: true });
+  writeFileSync(path.join(dir, ".changeset", "config.json"), JSON.stringify({ baseBranch: "main" }, null, 2));
+
+  const engineDir = path.join(dir, "packages", "engine");
+  mkdirSync(path.join(engineDir, "src", "__tests__", "fixtures"), { recursive: true });
+  // Existence alone is what packageHasVitestConfig checks.
+  writeFileSync(path.join(engineDir, "vitest.config.ts"), "");
+  writeFileSync(
+    path.join(engineDir, "package.json"),
+    JSON.stringify({ name: "@fusion/engine", version: "1.0.0", scripts: { test: "true" } }, null, 2),
+  );
+  const fixtureRel = "packages/engine/src/__tests__/fixtures/inventory.json";
+  writeFileSync(path.join(dir, fixtureRel), `${JSON.stringify({ entries: [] }, null, 2)}\n`);
+  writeFileSync(
+    path.join(dir, "packages/engine/src/__tests__/inventory-drift.test.ts"),
+    `import raw from "./fixtures/inventory.json";\nconst manifest = raw;\n`,
+  );
+  for (let n = 0; n < extraConsumers; n++) {
+    writeFileSync(
+      path.join(dir, `packages/engine/src/__tests__/extra-consumer-${n}.test.ts`),
+      `const fixtureName = "inventory.json"; // mentions the fixture basename in prose\n`,
+    );
+  }
+  git(dir, ["add", "-A"]);
+  git(dir, ["commit", "-q", "-m", "init"]);
+
+  // Regenerate ONLY the fixture, committed on a work branch ahead of main so the
+  // fixture-only diff registers through changedFilesSince (KB-019 shape).
+  writeFileSync(
+    path.join(dir, fixtureRel),
+    `${JSON.stringify({ entries: [{ axis1: "checkpoint-covered" }] }, null, 2)}\n`,
+  );
+  git(dir, ["checkout", "-q", "-b", "work"]);
+  git(dir, ["commit", "-qam", "regenerate inventory fixture"]);
+}
+
+/**
+ * Shared fake-bin spawn for the KB-047 integration tests: the real script runs in
+ * the repo with a fake `pnpm` bin on PATH that records every invocation
+ * ("$*" per line) to gateLog, exactly like the no-change integration test above.
+ */
+function runRealScriptWithFakePnpmBin(repoDir) {
+  const fakeBin = path.join(repoDir, "fake-bin");
+  const gateLog = path.join(repoDir, "pnpm-invocations.log");
+  mkdirSync(fakeBin, { recursive: true });
+  const fakePnpm = path.join(fakeBin, "pnpm");
+  writeFileSync(fakePnpm, "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$FUSION_TEST_GATE_LOG\"\nexit 0\n");
+  chmodSync(fakePnpm, 0o755);
+  const result = spawnSync(process.execPath, [scriptModulePath], {
+    cwd: repoDir,
+    encoding: "utf8",
+    timeout: 10_000,
+    env: {
+      ...process.env,
+      FUSION_PROJECT_DIR: repoDir,
+      FUSION_TEST_FULL: "",
+      FUSION_TEST_GATE_LOG: gateLog,
+      PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ""}`,
+    },
+  });
+  const invocations = () => readFileSync(gateLog, "utf8").split("\n").filter(Boolean);
+  return { result, invocations };
+}
+
+// KB-019 symptom acceptance: a fixture-only engine diff (no directly-changed test)
+// must now map to the consuming drift-guard test and run it in the affected lane.
+test("integration: fixture-only engine diff maps to its consuming drift-guard test in the affected lane", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "tc-fixture-map-"));
+  try {
+    makeFixtureGuardRepo(dir);
+    const { result, invocations } = runRealScriptWithFakePnpmBin(dir);
+    assert.equal(result.status, 0, `normal entry failed:\n${result.stdout}\n${result.stderr}`);
+    assert.equal(result.signal, null, `normal entry exceeded its test-owned bound:\n${result.stdout}\n${result.stderr}`);
+    // The affected lane must RUN (changed mode), not delegate to the gate.
+    assert.match(result.stdout, /\[test-changed\] mode=changed reason=changed-packages packages=1/);
+    assert.doesNotMatch(result.stdout, /\[test-changed\] mode=gate /);
+    // Visible mapping telemetry: which changed data files mapped to which tests.
+    assert.match(
+      result.stdout,
+      /\[test-changed\] @fusion\/engine: mapped 1 non-changed test file\(s\) reading the changed data file\(s\): inventory-drift\.test\.ts/,
+    );
+    assert.match(result.stdout, /running ONLY the 0 directly-changed \+ 1 fixture-mapped test file\(s\)/);
+    // The consumer runs positionally; the unbounded --changed selector never appears.
+    const lines = invocations();
+    const engineRun = lines.find((line) => line.includes("--filter @fusion/engine") && line.includes("exec vitest run"));
+    assert.ok(engineRun, `expected an @fusion/engine scoped vitest invocation:\n${lines.join("\n")}`);
+    assert.match(engineRun, /exec vitest run src\/__tests__\/inventory-drift\.test\.ts --passWithNoTests/);
+    for (const line of lines) {
+      assert.ok(!line.includes(" --changed "), `no invocation may use --changed: ${line}`);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Hub-source shape: 27 test files (26 extras + the real consumer) reference the
+// fixture, exceeding MAX_MAPPED_FIXTURE_TEST_FILES=25, so the mapped expansion is
+// refused wholesale and today's gate-only delegation is preserved.
+test("integration: reference set above the mapped cap keeps gate-only delegation", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "tc-fixture-cap-"));
+  try {
+    makeFixtureGuardRepo(dir, { extraConsumers: 26 });
+    const { result, invocations } = runRealScriptWithFakePnpmBin(dir);
+    assert.equal(result.status, 0, `normal entry failed:\n${result.stdout}\n${result.stderr}`);
+    assert.equal(result.signal, null, `normal entry exceeded its test-owned bound:\n${result.stdout}\n${result.stderr}`);
+    assert.match(result.stdout, /\[test-changed\] mode=changed reason=changed-packages packages=1/);
+    // Loud cap refusal naming the cap, plus the empty-set delegation note.
+    assert.match(result.stdout, /more than MAX_MAPPED_FIXTURE_TEST_FILES=25 test files/);
+    assert.match(result.stdout, /refusing the fixture-mapped expansion/);
+    assert.match(result.stdout, /no directly-changed @fusion\/engine test file to run/);
+    // No mapping telemetry, no positional vitest run, no --changed anywhere.
+    assert.doesNotMatch(result.stdout, /non-changed test file\(s\) reading the changed data file\(s\)/);
+    const lines = invocations();
+    assert.ok(lines.includes("test:gate"), "the merge-gate suite must still run:\n" + lines.join("\n"));
+    for (const line of lines) {
+      assert.ok(!line.includes("exec vitest run"), `no positional vitest run may be recorded: ${line}`);
+      assert.ok(!line.includes(" --changed "), `no --changed selector may be recorded: ${line}`);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("integration: CI=true does not force the full suite (only --full / FUSION_TEST_FULL do)", () => {
   const dir = mkdtempSync(path.join(tmpdir(), "tc-print-mode-"));
   try {
@@ -2170,7 +2339,8 @@ test("pruneFusionTestWorkers: only targets the fusion-test-workers- prefix", () 
 // FNXC:TestInfrastructure 2026-06-25-14:30: wide `vitest --changed` fan-out guard.
 // A changed non-test source file in a heavy package's module graph (own dir or a
 // transitive workspace dep) must be detected so the affected lane runs only the
-// directly-changed test files and delegates the rest to the merge gate, instead
+// directly-changed test files (plus, since KB-047, the bounded fixture-mapped
+// consumer set) and delegates the rest to the merge gate, instead
 // of fanning out to ~the full suite at workers=1 past the 15-min verification kill.
 const __fanoutOpts = {
   packageDirByName: new Map([
@@ -2297,6 +2467,213 @@ test("existingChangedTestFilesInPackage: excludes non-test and out-of-package pa
 test("existingChangedTestFilesInPackage: default existence root anchors at the git repo root", () => {
   const selfRel = "scripts/__tests__/test-changed.test.mjs"; // this very file — guaranteed on disk
   assert.deepEqual(existingChangedTestFilesInPackage([selfRel], "scripts"), [selfRel]);
+});
+
+// ---------------------------------------------------------------------------
+// KB-047: bounded fixture-to-consumer mapping primitives. A regenerated data
+// fixture (JSON snapshot, TS fixture module) is a changed non-test file with no
+// directly-changed test companion; the mapper finds the in-package test files
+// that reference it so fixture-only repairs get affected-lane signal instead of
+// silently delegating to gate-only (the KB-019 FN-8923 blind spot).
+// ---------------------------------------------------------------------------
+
+test("fixtureReferenceSignals: JSON fixture yields repo path plus basename with and without extension", () => {
+  assert.deepEqual(
+    fixtureReferenceSignals("packages/engine/src/__tests__/fixtures/merge-orphan-durable-write-inventory.json"),
+    [
+      "packages/engine/src/__tests__/fixtures/merge-orphan-durable-write-inventory.json",
+      "merge-orphan-durable-write-inventory.json",
+      "merge-orphan-durable-write-inventory",
+    ],
+  );
+});
+
+test("fixtureReferenceSignals: TS fixture module yields the extension-less specifier signal", () => {
+  assert.deepEqual(fixtureReferenceSignals("packages/engine/src/__tests__/fixtures/six-column-workflow-ir.ts"), [
+    "packages/engine/src/__tests__/fixtures/six-column-workflow-ir.ts",
+    "six-column-workflow-ir.ts",
+    "six-column-workflow-ir",
+  ]);
+});
+
+// The exported cap is a documented contract (docs/testing.md pins the number);
+// pin it so a silent cap change cannot invalidate the recorded wall-clock bound.
+test("MAX_MAPPED_FIXTURE_TEST_FILES: exported cap stays at its documented 25", () => {
+  assert.equal(MAX_MAPPED_FIXTURE_TEST_FILES, 25);
+});
+
+// KB-019 repro shape: the consumer imports the fixture via a relative specifier
+// ("./fixtures/inventory.json"); unrelated tests in the same package must not map.
+test("findFixtureConsumerTests: maps a consumer test importing the fixture via a relative specifier", () => {
+  const tmp = mkdtempSync(path.join(tmpdir(), "fusion-fixture-map-"));
+  try {
+    const fixtureRel = "packages/engine/src/__tests__/fixtures/inventory.json";
+    mkdirSync(path.join(tmp, "packages/engine/src/__tests__/fixtures"), { recursive: true });
+    writeFileSync(path.join(tmp, fixtureRel), "{}\n");
+    const consumerRel = "packages/engine/src/__tests__/inventory-drift.test.ts";
+    writeFileSync(path.join(tmp, consumerRel), `import raw from "./fixtures/inventory.json";\n`);
+    const unrelatedRel = "packages/engine/src/__tests__/other.test.ts";
+    writeFileSync(path.join(tmp, unrelatedRel), "export {};\n");
+    assert.deepEqual(findFixtureConsumerTests([fixtureRel], "packages/engine", { projectRoot: tmp }), {
+      mapped: [consumerRel],
+      exceededCap: false,
+    });
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// Extension-less TS fixture module imported as "./fixtures/six-column-ir": only
+// the extension-less signal can match (nothing references the full path or the
+// basename-with-extension).
+test("findFixtureConsumerTests: maps an extension-less TS fixture import via the basename signal", () => {
+  const tmp = mkdtempSync(path.join(tmpdir(), "fusion-fixture-map-"));
+  try {
+    const fixtureRel = "packages/engine/src/__tests__/fixtures/six-column-ir.ts";
+    mkdirSync(path.join(tmp, "packages/engine/src/__tests__/fixtures"), { recursive: true });
+    writeFileSync(path.join(tmp, fixtureRel), "export const ir = {} as const;\n");
+    const consumerRel = "packages/engine/src/__tests__/six-column.test.ts";
+    writeFileSync(path.join(tmp, consumerRel), `import { ir } from "./fixtures/six-column-ir";\n`);
+    assert.deepEqual(findFixtureConsumerTests([fixtureRel], "packages/engine", { projectRoot: tmp }), {
+      mapped: [consumerRel],
+      exceededCap: false,
+    });
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// readFileSync/resolve style: the consumer text names the fixture by its
+// basename (here with extension) without an import statement.
+test("findFixtureConsumerTests: maps a readFileSync-style reference by bare basename", () => {
+  const tmp = mkdtempSync(path.join(tmpdir(), "fusion-fixture-map-"));
+  try {
+    const fixtureRel = "packages/engine/src/__tests__/fixtures/merge-orphan-durable-write-inventory.json";
+    mkdirSync(path.join(tmp, "packages/engine/src/__tests__/fixtures"), { recursive: true });
+    writeFileSync(path.join(tmp, fixtureRel), "{}\n");
+    const consumerRel = "packages/engine/src/__tests__/regen.test.ts";
+    writeFileSync(
+      path.join(tmp, consumerRel),
+      `const manifestPath = resolve(__dirname, "fixtures/merge-orphan-durable-write-inventory.json");\n`,
+    );
+    assert.deepEqual(findFixtureConsumerTests([fixtureRel], "packages/engine", { projectRoot: tmp }), {
+      mapped: [consumerRel],
+      exceededCap: false,
+    });
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("findFixtureConsumerTests: diff with no referencing tests maps nothing and does not refuse", () => {
+  const tmp = mkdtempSync(path.join(tmpdir(), "fusion-fixture-map-"));
+  try {
+    const fixtureRel = "packages/engine/src/__tests__/fixtures/orphan.json";
+    mkdirSync(path.join(tmp, "packages/engine/src/__tests__/fixtures"), { recursive: true });
+    writeFileSync(path.join(tmp, fixtureRel), "{}\n");
+    const unrelatedRel = "packages/engine/src/__tests__/other.test.ts";
+    writeFileSync(path.join(tmp, unrelatedRel), "export {};\n");
+    assert.deepEqual(findFixtureConsumerTests([fixtureRel], "packages/engine", { projectRoot: tmp }), {
+      mapped: [],
+      exceededCap: false,
+    });
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// All-or-nothing refusal: over-cap reference sets drop the mapped expansion
+// entirely (never truncate) so gate-only delegation is preserved. Uses a small
+// explicit cap instead of looping 26 real files.
+test("findFixtureConsumerTests: reference set above maxMappedTests refuses the mapped expansion wholesale", () => {
+  const tmp = mkdtempSync(path.join(tmpdir(), "fusion-fixture-map-"));
+  try {
+    const fixtureRel = "packages/engine/src/__tests__/fixtures/hub.json";
+    mkdirSync(path.join(tmp, "packages/engine/src/__tests__/fixtures"), { recursive: true });
+    writeFileSync(path.join(tmp, fixtureRel), "{}\n");
+    const consumers = [];
+    for (const n of ["a", "b", "c"]) {
+      const rel = `packages/engine/src/__tests__/hub-${n}.test.ts`;
+      writeFileSync(path.join(tmp, rel), `const hub = "hub"; // references hub.json in prose\n`);
+      consumers.push(rel);
+    }
+    assert.deepEqual(findFixtureConsumerTests([fixtureRel], "packages/engine", { projectRoot: tmp, maxMappedTests: 2 }), {
+      mapped: [],
+      exceededCap: true,
+    });
+    // At the cap (3 references, cap 3) the mapped set is returned instead.
+    assert.deepEqual(findFixtureConsumerTests([fixtureRel], "packages/engine", { projectRoot: tmp, maxMappedTests: 3 }), {
+      mapped: consumers.sort(),
+      exceededCap: false,
+    });
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// Defensive input filter: a deleted consumer test path (not written to disk) and
+// irrelevant root paths never enter the mapping; the live consumer still maps.
+test("findFixtureConsumerTests: deleted consumer test paths and irrelevant root inputs are filtered out", () => {
+  const tmp = mkdtempSync(path.join(tmpdir(), "fusion-fixture-map-"));
+  try {
+    const fixtureRel = "packages/engine/src/__tests__/fixtures/inventory.json";
+    const deletedConsumerRel = "packages/engine/src/__tests__/deleted-drift.test.ts";
+    mkdirSync(path.join(tmp, "packages/engine/src/__tests__/fixtures"), { recursive: true });
+    writeFileSync(path.join(tmp, fixtureRel), "{}\n");
+    // deletedConsumerRel intentionally NOT written to disk (simulates removal)
+    const liveConsumerRel = "packages/engine/src/__tests__/inventory-drift.test.ts";
+    writeFileSync(path.join(tmp, liveConsumerRel), `import raw from "./fixtures/inventory.json";\n`);
+    assert.deepEqual(
+      findFixtureConsumerTests([fixtureRel, deletedConsumerRel, "README", ".changeset/x.md"], "packages/engine", {
+        projectRoot: tmp,
+      }),
+      { mapped: [liveConsumerRel], exceededCap: false },
+    );
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("findFixtureConsumerTests: a referencing test outside pkgDir is ignored", () => {
+  const tmp = mkdtempSync(path.join(tmpdir(), "fusion-fixture-map-"));
+  try {
+    const fixtureRel = "packages/engine/src/__tests__/fixtures/inventory.json";
+    mkdirSync(path.join(tmp, "packages/engine/src/__tests__/fixtures"), { recursive: true });
+    mkdirSync(path.join(tmp, "packages/dashboard/src/__tests__"), { recursive: true });
+    writeFileSync(path.join(tmp, fixtureRel), "{}\n");
+    const outsideRel = "packages/dashboard/src/__tests__/mentions-engine-fixture.test.ts";
+    writeFileSync(path.join(tmp, outsideRel), `const name = "inventory.json";\n`);
+    assert.deepEqual(findFixtureConsumerTests([fixtureRel], "packages/engine", { projectRoot: tmp }), {
+      mapped: [],
+      exceededCap: false,
+    });
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("findFixtureConsumerTests: output is sorted and deduplicated across multiple changed files and signals", () => {
+  const tmp = mkdtempSync(path.join(tmpdir(), "fusion-fixture-map-"));
+  try {
+    const fixtureARel = "packages/engine/src/__tests__/fixtures/inventory.json";
+    const fixtureBRel = "packages/engine/src/__tests__/fixtures/other-snapshot.json";
+    mkdirSync(path.join(tmp, "packages/engine/src/__tests__/fixtures"), { recursive: true });
+    writeFileSync(path.join(tmp, fixtureARel), "{}\n");
+    writeFileSync(path.join(tmp, fixtureBRel), "{}\n");
+    // references BOTH fixtures (and multiple signals of each) — must appear once
+    const bothRel = "packages/engine/src/__tests__/both.test.ts";
+    writeFileSync(
+      path.join(tmp, bothRel),
+      `import a from "./fixtures/inventory.json";\nimport b from "./fixtures/other-snapshot.json";\n`,
+    );
+    // references only fixture A by basename-with-extension
+    const onlyARel = "packages/engine/src/__tests__/only-a.test.ts";
+    writeFileSync(path.join(tmp, onlyARel), `const f = "inventory.json";\n`);
+    const mapped = findFixtureConsumerTests([fixtureARel, fixtureBRel], "packages/engine", { projectRoot: tmp }).mapped;
+    assert.deepEqual(mapped, [onlyARel, bothRel].sort());
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
 });
 
 // FNXC:TestInfrastructure 2026-06-26-14:40: regression for the "subdirectory runs
