@@ -60,16 +60,23 @@ describe("CLI quarantine ledger lockstep", () => {
     }
   });
 
-  it("retains the FN-9425 skills-get quarantine exactly once", () => {
+  it("keeps skills-get rescued and absent from both CLI quarantine surfaces", () => {
+    /*
+    FNXC:CliTests 2026-11-11-23:05 (KB-037):
+    KB-037 rescues the FN-9425 skills-get quarantine before its 2026-10-13 deletion deadline.
+    Root cause: the failing test held three sequential built-CLI process lifecycles inside one
+    default-5000ms body, so loaded shards pushed it past the budget; the structural split gives
+    each built request its own single-spawn test with byte-identical assertions. The quarantine
+    pair (this list's entry and the ledger row) was removed in lockstep with the split. This pin
+    asserts the concrete new truth — full absence from BOTH surfaces — so any re-quarantine of
+    this file must consciously reconcile this test, not silently re-add the pair.
+    */
     const quarantinedFile = "src/commands/__tests__/skills-get.test.ts";
     const configPaths = parseQuarantinedCliTests(readFileSync(configPath, "utf8"));
     const ledger = JSON.parse(readFileSync(ledgerPath, "utf8")) as { entries: QuarantineEntry[] };
     const entries = ledger.entries.filter((entry) => entry.file === `${cliPathPrefix}${quarantinedFile}`);
 
-    expect(configPaths.filter((path) => path === quarantinedFile)).toHaveLength(1);
-    expect(entries).toHaveLength(1);
-    expect(entries[0]).toMatchObject({
-      quarantinedAt: "2026-09-29",
-    });
+    expect(configPaths.filter((path) => path === quarantinedFile)).toHaveLength(0);
+    expect(entries).toHaveLength(0);
   });
 });

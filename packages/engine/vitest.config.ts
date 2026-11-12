@@ -398,16 +398,31 @@ export default defineConfig({
             inMemoryDb. These tests exercise the SQLite Database class being deleted in this feature.
             Quarantined on sight per AGENTS.md; mirrored in scripts/lib/test-quarantine.json.
             */
-            // SQLite-path gate test evicted + quarantined (see engine-core comment + ledger).
-            "src/__tests__/agent-activity-writers.test.ts",
+            /*
+            FNXC:AgentActivityWritersQuarantine 2026-11-12-00:40 (KB-037):
+            KB-037 rescues this quarantine before its 2026-10-13 deletion deadline. Investigation
+            proved the live defect was fixture drift, not the recorded seq-collision flake: FN-9424
+            rerouted completeTask onto the shared finalizer (mergeConfirmed proof required) the same
+            day the file was quarantined, so the loose `merged: true` fixture deterministically
+            failed `persists task completion through the merger finalization path` 5/5 at HEAD. The
+            fixture now records the durable proof shape; assertions unchanged. Exclusion and ledger
+            row removed in lockstep; do not re-add either unless a new root cause is quarantined
+            under the deletion ratchet.
+            */
             /*
             FNXC:ExecutorPauseResumeQuarantine 2026-10-05-17:10:
             FN-9510's second full-suite sighting again observed zero agent creations only under
             shard-wide mock/process interference. Keep the whole high-coverage file out of
             engine-default until the deletion-ratchet deadline rather than weakening its resume
             assertion or changing the production lifecycle fence.
+
+            FNXC:ExecutorPauseResumeQuarantine 2026-11-11-23:17 (KB-037):
+            KB-037 rescues this quarantine before its 2026-10-19 deletion deadline: the failing
+            test's blind 50ms sleep raced the detached resume chain; a bounded vi.waitFor settle on
+            the exact createFnAgent-call precondition replaces it with both original assertions
+            unchanged. Exclusion and ledger row removed in lockstep; do not re-add either unless a
+            new root cause is quarantined under the deletion ratchet.
             */
-            "src/__tests__/executor-prompt.test.ts",
             "node_modules/**",
             "dist/**",
             // FNXC:PgMigrationQuarantine 2026-07-18-04:30: FN-8270 rescued the final seven VAL-REMOVAL-005 holdouts by awaiting PG audit reads and modeling async collaborators. Their paired ledger entries and excludes were removed only after targeted green runs.

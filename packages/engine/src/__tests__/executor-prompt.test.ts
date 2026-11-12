@@ -1075,8 +1075,21 @@ describe("TaskExecutor pause behavior", () => {
       updatedAt: new Date().toISOString(),
     });
 
-    // Wait for async execution to start
-    await new Promise((r) => setTimeout(r, 50));
+    /*
+    FNXC:ExecutorPromptResume 2026-11-11-23:17 (KB-037):
+    The resume chain (task:updated listener → dispatchUnpauseResume single-flight claim → admission
+    checks → worktree validation → createFnAgent) runs detached from this test body, so the former
+    fixed 50ms sleep raced worker starvation — the recorded hosted failure observed ZERO
+    createFnAgent calls at assertion time (79.8ms in a 564-test shard). Settle deterministically on
+    the exact precondition the assertion reads: vi.waitFor polls the live mock state and still
+    fails through its own bounded timeout if the resume chain never fires, so a product regression
+    keeps failing this test. Call #2 comes from the same-chain no-fn_task_done retry loop with no
+    timer between calls (run-implementation.ts), so the >= 2 milestone is a stable completion
+    signal for both unchanged assertions below.
+    */
+    await vi.waitFor(() => {
+      expect(mockedCreateFnAgent.mock.calls.length).toBeGreaterThanOrEqual(2);
+    }, { timeout: 5000, interval: 20 });
 
     // Agent created at least twice: initial resume + retry when agent finishes without fn_task_done
     // (async worktree validation may allow additional retry cycles within the timeout)

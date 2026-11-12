@@ -111,6 +111,12 @@ const quarantinedCliTests: string[] = [
   FN-9425 quarantines skills-get.test.ts after two independent non-blocking Full Suite timeouts.
   Keep the 14-day deletion ratchet and direct-file diagnostic bypass; do not appease this with timeout,
   retry, or assertion changes. This is not an engine-core merge-gate eviction.
+
+  FNXC:CliTests 2026-11-11-23:05 (KB-037):
+  KB-037 rescues the skills-get quarantine before its 2026-10-13 deletion deadline via a structural
+  split of the failing three-spawn test into three single-spawn tests with byte-identical assertions.
+  Exclusion and ledger row removed in lockstep; do not re-add either unless a new root cause is
+  quarantined under the deletion ratchet.
   */
   /*
   FNXC:CliTests 2026-11-06-08:51:
@@ -133,8 +139,12 @@ const quarantinedCliTests: string[] = [
   dropped to 157-415ms and a mutation check proved the suite still fails on a real mapping
   regression. Exclusion and ledger row removed in lockstep; skills-get (FN-9425) stays quarantined.
   Do not re-add either unless a new root cause is quarantined under the deletion ratchet.
+
+  FNXC:CliTests 2026-11-11-23:05 (KB-037):
+  Correction: skills-get (FN-9425) no longer stays quarantined — KB-037 rescued it the same day
+  (see the 2026-09-29 block above); this array is now empty by design. The lockstep pin test
+  asserts the absence.
   */
-  "src/commands/__tests__/skills-get.test.ts",
 ];
 
 /*

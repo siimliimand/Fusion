@@ -278,7 +278,19 @@ pgDescribe("engine agent activity durable writer", () => {
       ...await h.store().moveTask(task.id, "in-progress", { moveSource: "agent" }),
       dependencies: ["FN-blocking-activity"],
     } as any;
+    /*
+    FNXC:AgentActivityStream 2026-11-12-01:20 (KB-037):
+    The executor's task:moved listener spawns DETACHED execute() chains for any WIP-lane move on the
+    shared real store, and a chain that crosses a later test's beforeEach reset fails its graph with
+    "Task KB-001 not found", then durably writes the failed step result and a workflow:gate-failed
+    event into the recreated task — poisoning the next test's filtered activity query and its step
+    ordinals (attempt 1 instead of 0). That cross-test chain is the ledger's recorded
+    `events[0]` seq-'2' identity. This facade no-ops listener registration (same pattern as the
+    terminal-gate and self-healing tests below) so no executor in this file ever attaches lifecycle
+    listeners to the shared store; assertions and the real durable sink are unchanged.
+    */
     const store = Object.assign(Object.create(h.store()), {
+      on: vi.fn(),
       listTasks: vi.fn().mockResolvedValue([{ id: "FN-blocking-activity", column: "todo" }]),
     }) as any;
     const executor = new TaskExecutor(store, h.rootDir());
@@ -312,7 +324,15 @@ pgDescribe("engine agent activity durable writer", () => {
   it("persists the real executor review handoff through TaskStore", async () => {
     const task = await h.createTestTask();
     const executableTask = await h.store().moveTask(task.id, "in-progress", { moveSource: "agent" });
-    const executor = new TaskExecutor(h.store(), h.rootDir());
+    /*
+    FNXC:AgentActivityStream 2026-11-12-01:20 (KB-037):
+    Listener registration must be a no-op on the shared real store (see the task-start test above):
+    a registered task:moved listener turns this test's in-progress move into a detached real-graph
+    execute() chain that outlives the test, fails with "Task KB-001 not found" across the next
+    beforeEach reset, and poisons the recreated task's durable rows. handoffToReview,
+    recordAgentActivity, and every other store seam stay real through prototype inheritance.
+    */
+    const executor = new TaskExecutor(Object.assign(Object.create(h.store()), { on: vi.fn() }) as any, h.rootDir());
 
     await (executor as any).handoffTaskToReview(executableTask, "review-handoff-requested", "exec-KB-001-1234567890-abcd");
 
@@ -404,7 +424,14 @@ pgDescribe("engine agent activity durable writer", () => {
     await h.store().moveTask(task.id, "in-progress", { moveSource: "agent" });
     await h.store().moveTask(task.id, "in-review", { moveSource: "agent" });
 
-    await completeTask(h.store(), task.id, { merged: true, commitSha: "a".repeat(40) } as any);
+    /* FNXC:AgentActivityStream 2026-11-11-23:00 (KB-037):
+       The merger's shared finalizer only promotes `mergeConfirmed: true` into durable merge proof
+       (FN-9370/FN-9399/FN-9424 hardened `completeTask` onto `finalizeProvenAutoMergeTask` right as
+       this file was quarantined, so the drift was invisible to routine lanes). A loose `merged:
+       true` result is refused with `missing-merge-confirmation` and the completion writer never
+       runs — deterministic 5/5 failure at HEAD, not a flake. The fixture now records the proof the
+       way every production merger route does; assertions are unchanged. */
+    await completeTask(h.store(), task.id, { merged: true, mergeConfirmed: true, commitSha: "a".repeat(40) } as any);
 
     const { events } = await queryAgentActivityEvents(h.layer(), { taskId: task.id, type: "task:completed" });
     expect(events).toHaveLength(1);

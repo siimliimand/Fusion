@@ -484,7 +484,7 @@ explicit-file diagnostics runnable; timeout, retry, and assertion appeasement re
 -->
 ### 19. Built skills-get global flag completion
 
-- **Status:** Closed — quarantined 2026-09-29 by FN-9425 after the second sighting triggered the deletion ratchet; deletion deadline 2026-10-13.
+- **Status:** Closed — quarantined 2026-09-29 by FN-9425 after the second sighting triggered the deletion ratchet; deletion deadline 2026-10-13. Rescued 2026-11-12 by KB-037 before the deadline: the recorded identity was duration-driven — one test body held three sequential built-CLI spawns (hosted 5228.5 ms and 5914.7 ms; reproduced focused at HEAD at the 5000 ms budget, no CLI `testTimeout` override) — so it was split into three focused single-spawn tests (built `--version`, built `--help`, duplicate `--project` rejection) with byte-identical assertions. The ledger row, the CLI config entry, and the FN-9425 pin test (rewritten to the rescue contract) were removed together in commit c0d1ca0d2; focused ×10 and loaded multi-file arrangements ×3 (twice) passed with zero recurrence of the timeout identity. No timeout, retry, skip, or assertion change.
 - **File:** `packages/cli/src/commands/__tests__/skills-get.test.ts`
 - **Exact test:** `fn skills get > preserves global flag precedence and validation for built guide requests`
 - **First-sighting tree/SHA:** `7d5e1dccca` (FN-9421).
@@ -498,7 +498,7 @@ FN-9423 rebuilt the CLI and ran the exact file through the built `bin.mjs` entry
 
 ### 17. Terminal graph-gate activity outbox contract
 
-- **Status:** Closed — quarantined 2026-09-29 after the second sighting triggered the deletion ratchet; deletion deadline 2026-10-13.
+- **Status:** Closed — quarantined 2026-09-29 after the second sighting triggered the deletion ratchet; deletion deadline 2026-10-13. Rescued 2026-11-12 by KB-037 before the deadline: two test-only root causes, both reproduced locally with PostgreSQL executing the pgDescribe block — (1) fixture drift: FN-9424 rerouted `completeTask` onto the mergeConfirmed-proof finalizer the same day this file was quarantined, so the loose `merged: true` fixture failed the completion test 5/5 at HEAD, and the fixture now records the production proof shape; (2) the recorded seq-'2' straggler, proven in a 13-run focused loop to be cross-test chain poisoning: executor lifecycle listeners on the shared store let earlier tests' detached `execute()` chains outlive a `beforeEach` fast-DELETE reset and durably write a poisoned `workflow:gate-*` event into the recreated task, colliding with the next test's filtered query. Listener registration is now a no-op on the affected tests' store facades with every assertion unchanged; the ledger row and engine-default exclusion were removed together in commit 84adec2ed; focused ×10 (11/11 each, pgDescribe executing) and a loaded 4-file arrangement ×3 (81/81 each) passed with zero recurrence. This confirms the no-product-race analysis above: the outbox writer serializes correctly.
 - **File:** `packages/engine/src/__tests__/agent-activity-writers.test.ts`
 - **Exact test:** `engine agent activity durable writer > persists a terminal graph gate through the production TaskStore outbox facade`
 - **Observed tree/SHA:** `c76cb158f4` (FN-9388).
@@ -940,7 +940,7 @@ self-tests spawned `pnpm --filter @fusion/dashboard test`, re-entering the suite
 
 ## Entry: `executor-prompt` pause-resume agent-creation count (quarantined second sighting)
 
-- **Status:** Quarantined 2026-10-05 by FN-9510 under the deletion ratchet; delete the file, ledger row, and engine-default exclusion after 2026-10-19 unless a non-appeasement root-cause repair rescues it.
+- **Status:** Closed 2026-11-12 by KB-037 — rescued with root cause before the 2026-10-19 deletion deadline. The recorded identity (createFnAgent calls 0 at 79.776822 ms) came from this test awaiting a blind 50 ms real-timer sleep while the unawaited resume chain (`task:updated` listener → single-flight claim → admission checks → `createFnAgent`) ran; it now settles deterministically on the exact call-count precondition via `vi.waitFor` (≥ 2 calls — stable because the same-chain no-`fn_task_done` retry produces the second call with no timer between them) with both original assertions byte-identical. The ledger row and engine-default exclusion were removed together in commit 7aba113e9. Verification: focused ×10 (115/115 each), the five surviving files of the documented multi-file arrangement ×5 (146/146 each; `task-done-refusal-x-invariant` was deleted upstream by FN-9353), and one repeat under eight verified CPU spinners (load peak 9.47) — zero recurrence; the hosted-only signature is satisfied by this mechanism proof.
 - **File:** `packages/engine/src/__tests__/executor-prompt.test.ts`
 - **Exact test:** `TaskExecutor pause behavior > resumes unpaused in-progress task with no active session`
 - **Observed trees/SHAs:** [run 33034719148](https://github.com/Runfusion/Fusion/actions/runs/33034719148) at `5769d5cd610e8830be24c4ede6eb79b38d2143c1`, and [run 37339500295](https://github.com/Runfusion/Fusion/actions/runs/37339500295) at `1a648d35d3987a6722b221e37df3084f75df6f0d`.

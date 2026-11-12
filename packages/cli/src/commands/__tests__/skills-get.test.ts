@@ -88,15 +88,30 @@ describe("fn skills get", () => {
     expect(missing).toMatchObject({ code: 1, signal: null, stderr: expect.stringContaining("computer-use") });
   });
 
-  it("preserves global flag precedence and validation for built guide requests", async () => {
+  /*
+  FNXC:SkillsGetRescue 2026-11-11-23:05 (KB-037):
+  KB-037 rescues the FN-9425 quarantine before its 2026-10-13 deletion deadline. The failing test
+  held THREE sequential built-CLI process lifecycles inside one default-5000ms test body; loaded
+  shards pushed the trio past the budget (5228.5ms / 5914.7ms hosted) and the focused file
+  reproduced the same timeout at HEAD during reconciliation. The split gives each built request its
+  own single-spawn test with byte-identical assertions and expected outputs — no testTimeout, no
+  retry, no assertion change. The quarantine pair (this list entry and the ledger row) is removed
+  in lockstep with the split; the guide/version consistency contract stays covered by the separate
+  built-entry-point test.
+  */
+  it("passes --version through the built guide request", async () => {
     const version = await runBuiltCli(["skills", "get", "computer-use", "--version"]);
     expect(version).toMatchObject({ code: 0, signal: null });
     expect(version.stdout.trim()).toMatch(/^\d+\.\d+\.\d+/);
+  });
 
+  it("passes --help through the built guide request", async () => {
     const help = await runBuiltCli(["skills", "get", "computer-use", "--help"]);
     expect(help).toMatchObject({ code: 0, signal: null });
     expect(help.stdout).toContain("fn — AI-orchestrated task board");
+  });
 
+  it("rejects duplicate --project flags for built guide requests", async () => {
     const duplicateProject = await runBuiltCli([
       "skills", "get", "computer-use", "--project", "one", "-P", "two",
     ]);
