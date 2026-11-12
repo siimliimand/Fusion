@@ -6,7 +6,7 @@ import { WEDGE_RENOTIFY_COOLDOWN_MS } from "./types/task/task-core.js";
 import { clearTerminalFailureAutoRecoveryBudget } from "./tasks/terminal-failure-auto-recovery.js";
 import { join } from "node:path";
 import { and, desc, eq, isNull, ne, sql } from "drizzle-orm";
-import { createCurrentPlanEvidence, diffSpecLocks, isSpecLockActive, UnavailablePlanLockError, type CurrentPlanEvidence, type PlanEvidenceBindings, type SpecLock } from "./planner/spec-lock.js";
+import { createCurrentPlanEvidence, diffSpecLocks, isSpecLockActive, planEvidenceBindingsFromTask, UnavailablePlanLockError, type CurrentPlanEvidence, type PlanEvidenceBindings, type SpecLock } from "./planner/spec-lock.js";
 import { evaluateSpecDrift, hasPriorLockDivergence, type DriftReport } from "./planner/drift-report.js";
 import * as schema from "./postgres/schema/index.js";
 import { type FSWatcher } from "node:fs";
@@ -28,12 +28,8 @@ Keep this projection small and structural; it captures IDs only and never copies
 telemetry or a mutable task field.
 */
 function specLockBindings(task: Pick<Task, "dependencies" | "missionId" | "sliceId" | "sourceParentTaskId">): PlanEvidenceBindings {
-  return {
-    dependencies: task.dependencies ?? [],
-    missionId: task.missionId,
-    sliceId: task.sliceId,
-    sourceParentTaskId: task.sourceParentTaskId,
-  };
+  /* FNXC:SpecLockDispatchBreaker 2026-11-12-08:04: single-sourced with the dispatch-breaker seam so a stamped rejection hash and its recomputation can never drift. */
+  return planEvidenceBindingsFromTask(task);
 }
 
 export type OverlapBlockerRepairReason =

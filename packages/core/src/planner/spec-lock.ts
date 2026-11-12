@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { stripGeneratedOriginalDescription } from "../tasks/original-description-region.js";
+import type { Task } from "../types/task/task-core.js";
 
 export const SPEC_LOCK_PARSER_VERSION = 1;
 
@@ -196,6 +197,52 @@ function normalizedPlanEvidenceBindings(bindings: PlanEvidenceBindings | undefin
     ...(bindings?.sliceId?.trim() ? { sliceId: bindings.sliceId.trim() } : {}),
     ...(bindings?.sourceParentTaskId?.trim() ? { sourceParentTaskId: bindings.sourceParentTaskId.trim() } : {}),
   };
+}
+
+/*
+FNXC:SpecLockDispatchBreaker 2026-11-12-08:04:
+A deterministic spec-lock parser rejection (for example `mission-missing`) used to be followed by
+unbounded reviewer re-dispatch: self-healing worktree reclaim cleared the failed park and requeued
+the card, and the graph re-ran the full review session over unchanged parser input every few
+minutes (observed on a real card: 16 identical attempts in one morning, ~141M cumulative tokens).
+These helpers let the engine stamp the durable diagnostic with the exact parser-input hash and
+let dispatch boundaries refuse a new reviewer session while that hash is unchanged, enforcing the
+documented rule "never spend another reviewer call on unchanged parser input".
+*/
+
+/** Live task relations are structural plan inputs; this mirrors the store's binding derivation. */
+export function planEvidenceBindingsFromTask(
+  task: Pick<Task, "dependencies" | "missionId" | "sliceId" | "sourceParentTaskId">,
+): PlanEvidenceBindings {
+  return {
+    dependencies: task.dependencies ?? [],
+    missionId: task.missionId,
+    sliceId: task.sliceId,
+    sourceParentTaskId: task.sourceParentTaskId,
+  };
+}
+
+/** The parser-input identity behind `createCurrentPlanEvidence`'s `sourceHash`, standalone. */
+export function computePlanLockSourceHash(prompt: string, bindings?: PlanEvidenceBindings): string {
+  return hash(JSON.stringify({ prompt, bindings: normalizedPlanEvidenceBindings(bindings) }));
+}
+
+const PLAN_LOCK_INPUT_STAMP_PATTERN = /\[plan-input ([0-9a-f]{64})\]/;
+
+/** The durable diagnostic a plan-lock rejection persists on the step result. */
+export function formatPlanLockUnavailableDiagnostic(
+  error: Pick<UnavailablePlanLockError, "reason" | "unavailableSections" | "sourceHash">,
+): string {
+  return `${PLAN_LOCK_UNAVAILABLE_DIAGNOSTIC} ${error.reason} (${error.unavailableSections.join(", ") || "unknown section"}). [plan-input ${error.sourceHash}]`;
+}
+
+/**
+ * Extract the parser-input hash a rejection stamped onto its diagnostic, so a dispatch boundary
+ * can compare it against the live prompt. Returns `undefined` for legacy rows written before
+ * stamping; callers must treat those conservatively (breaker inert) rather than block.
+ */
+export function planLockInputHashFromDiagnostic(text: string | undefined | null): string | undefined {
+  return text?.match(PLAN_LOCK_INPUT_STAMP_PATTERN)?.[1];
 }
 
 function applyLivePlanBindings(

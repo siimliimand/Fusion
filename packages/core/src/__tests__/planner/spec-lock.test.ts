@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { evaluateSpecDrift, hasPriorLockDivergence, isCurrentSpecDriftReport } from "../../planner/drift-report.js";
-import { canonicalizePlan, createCurrentPlanEvidence, diffSpecLocks, isSpecLockActive, isUnavailablePlanLockError, UnavailablePlanLockError } from "../../planner/spec-lock.js";
+import { canonicalizePlan, computePlanLockSourceHash, createCurrentPlanEvidence, diffSpecLocks, formatPlanLockUnavailableDiagnostic, isSpecLockActive, isUnavailablePlanLockError, PLAN_LOCK_UNAVAILABLE_DIAGNOSTIC, planEvidenceBindingsFromTask, planLockInputHashFromDiagnostic, UnavailablePlanLockError } from "../../planner/spec-lock.js";
 import { applyOriginalDescription } from "../../tasks/original-description-policy.js";
 
 const prompt = `# Task\n\n## Mission\n\nBuild a safe widget.\n\n## File Scope\n\n- src/widget.ts\n\n## Steps\n\n1. Build widget\n\n## Completion Criteria\n\n- [ ] Widget works\n\n## Do NOT\n\n- Change API\n\n## Dependencies\n\n- FN-1\n`;
@@ -228,5 +228,48 @@ describe("spec lock canonicalization", () => {
     expect(isCurrentSpecDriftReport(report, originalLock, rewritten, "approved")).toBe(false);
     expect(isCurrentSpecDriftReport(report, originalLock, first, "approved")).toBe(true);
     expect(isCurrentSpecDriftReport(report, originalLock, first, undefined)).toBe(false);
+  });
+});
+
+describe("plan-lock dispatch breaker helpers", () => {
+  const bindingsTask = { dependencies: [" FN-2 ", "FN-1", "FN-1"], missionId: " mission-9 ", sliceId: undefined, sourceParentTaskId: undefined };
+
+  it("computePlanLockSourceHash matches createCurrentPlanEvidence sourceHash for identical inputs", () => {
+    const bindings = planEvidenceBindingsFromTask(bindingsTask);
+    const current = createCurrentPlanEvidence({ version: 1, sourceRevision: 1, capturedAt: "2026-11-12T08:04:00.000Z", prompt, bindings });
+    expect(computePlanLockSourceHash(prompt, bindings)).toBe(current.sourceHash);
+  });
+
+  it("changes the parser-input hash when the prompt or a binding changes", () => {
+    const bindings = planEvidenceBindingsFromTask(bindingsTask);
+    const baseline = computePlanLockSourceHash(prompt, bindings);
+    expect(computePlanLockSourceHash(prompt.replace("safe widget", "changed widget"), bindings)).not.toBe(baseline);
+    expect(computePlanLockSourceHash(prompt, { ...bindings, dependencies: ["FN-3"] })).not.toBe(baseline);
+  });
+
+  it("formatPlanLockUnavailableDiagnostic keeps the matcher prefix and stamps the input hash", () => {
+    const diagnostic = formatPlanLockUnavailableDiagnostic({ reason: "mission-missing", unavailableSections: ["mission"], sourceHash: "a".repeat(64) });
+    expect(diagnostic.startsWith(PLAN_LOCK_UNAVAILABLE_DIAGNOSTIC)).toBe(true);
+    expect(diagnostic).toContain("(mission)");
+    expect(planLockInputHashFromDiagnostic(diagnostic)).toBe("a".repeat(64));
+  });
+
+  it("planLockInputHashFromDiagnostic returns undefined for legacy unstamped diagnostics", () => {
+    expect(planLockInputHashFromDiagnostic("Plan approved but spec lock unavailable: mission-missing (mission).")).toBeUndefined();
+    expect(planLockInputHashFromDiagnostic(undefined)).toBeUndefined();
+    expect(planLockInputHashFromDiagnostic(null)).toBeUndefined();
+  });
+
+  it("planEvidenceBindingsFromTask passes the raw task relations and the hash stays normalization-invariant", () => {
+    /*
+    FNXC:SpecLockDispatchBreaker 2026-11-12-08:04:
+    The mapper mirrors the store's derivation, which passes relations RAW; normalization is the
+    hash seam's job. The stamp must therefore be identical for equivalent-but-differently-formatted
+    bindings, or an operator reordering dependencies would defeat the unchanged-input comparison.
+    */
+    expect(planEvidenceBindingsFromTask(bindingsTask)).toEqual({ dependencies: [" FN-2 ", "FN-1", "FN-1"], missionId: " mission-9 " });
+    expect(planEvidenceBindingsFromTask({ dependencies: [] })).toEqual({ dependencies: [] });
+    const reformatted = computePlanLockSourceHash(prompt, { dependencies: ["FN-1", " FN-2 "], missionId: "mission-9" });
+    expect(computePlanLockSourceHash(prompt, planEvidenceBindingsFromTask(bindingsTask))).toBe(reformatted);
   });
 });
