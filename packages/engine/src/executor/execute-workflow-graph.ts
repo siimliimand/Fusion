@@ -20,9 +20,9 @@ import type {
 import {
   ACTIVE_WORKFLOW_WORK_ITEM_STATES,
   computePlanApprovalFingerprint,
+  formatPlanLockUnavailableDiagnostic,
   isPlanReviewSatisfied,
   isUnavailablePlanLockError,
-  PLAN_LOCK_UNAVAILABLE_DIAGNOSTIC,
   PLAN_REVIEW_GROUP_ID,
   getBuiltinWorkflow,
   resolveColumnAgentBinding,
@@ -48,6 +48,7 @@ import {
 } from "../execution/required-workflow-artifacts.js";
 import { getActiveNotificationService } from "../util/notifier.js";
 import { holdWorkflowAdmission, workflowAdmissionHoldReason } from "./workflow-admission-hold.js";
+import { resolvePlanLockDispatchBreaker } from "./plan-lock-dispatch-breaker.js";
 
 export function buildWorkflowGateActivityMetadata(
   result: CoreWorkflowStepResult,
@@ -481,7 +482,13 @@ export async function persistWorkflowStepResultWithOutcome(
           await deps.store.lockCurrentPlanWhilePlanningLocked(taskId, fingerprint, prompt);
         } catch (error) {
           if (!isUnavailablePlanLockError(error)) throw error;
-          unavailablePlanLockDiagnostic = `${PLAN_LOCK_UNAVAILABLE_DIAGNOSTIC} ${error.reason} (${error.unavailableSections.join(", ") || "unknown section"}).`;
+          /*
+          FNXC:SpecLockDispatchBreaker 2026-11-12-08:04:
+          The diagnostic now carries the parser-input hash so graph entry can refuse a new reviewer
+          session while the input is unchanged (see plan-lock-dispatch-breaker.ts). The format stays
+          `PLAN_LOCK_UNAVAILABLE_DIAGNOSTIC`-prefixed for every existing startsWith matcher.
+          */
+          unavailablePlanLockDiagnostic = formatPlanLockUnavailableDiagnostic(error);
           activityResult = {
             ...result,
             status: "failed",
@@ -649,6 +656,31 @@ export async function executeWorkflowGraph(
           disposition: "failed",
           outcome: "failure",
           reason: `settings-load-failed: ${err instanceof Error ? err.message : String(err)}`,
+          visitedNodeIds: [],
+        });
+        return;
+      }
+      /*
+      FNXC:SpecLockDispatchBreaker 2026-11-12-08:04:
+      Refuse graph entry when the latest plan-review failure is a deterministic spec-lock parser
+      rejection for UNCHANGED plan input. Everything downstream (remediation seam, failed-step
+      recovery) already declines this shape correctly, but plain graph re-entry still re-ran a full
+      reviewer session over identical input every dispatch, and self-healing reclaim kept
+      resurrecting the parked card — the KB-001 loop burned a reviewer session every ~9 minutes for
+      days. With the breaker, a re-entry on unchanged input costs zero model calls and parks with
+      the same visible diagnostic; fixing PROMPT.md changes the stamped hash and reopens the gate.
+      */
+      const planLockBreak = await resolvePlanLockDispatchBreaker(
+        { readTaskArtifact: deps.readTaskArtifact },
+        task,
+      );
+      if (planLockBreak.blocked) {
+        const reason = `plan-lock-unavailable-dispatch-blocked: deterministic spec-lock rejection for unchanged plan input (hash ${planLockBreak.inputHash.slice(0, 12)}). No reviewer session was dispatched. Correct PROMPT.md (for example, add the missing '## Mission' section) or retry after changing the plan.`;
+        executorLog.warn(`[workflow-graph] ${task.id} ${reason}`);
+        await deps.handleGraphFailure(task, {
+          disposition: "failed",
+          outcome: "failure",
+          reason,
           visitedNodeIds: [],
         });
         return;
