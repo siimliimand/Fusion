@@ -423,6 +423,18 @@ export function mergeTaskSnapshot<T extends Task>(
     ? carryAwaitingPlanning(current, incoming)
     : current.awaitingPlanning;
   /*
+  FNXC:BoardContextUsage 2026-11-12-10:59:
+  `contextUsage` is live board-fetch telemetry, not lifecycle evidence. Only a
+  complete board fetch may refresh or clear it — and an equal clock must still
+  refresh, because occupancy moves constantly while the task row's clock does
+  not. Sparse SSE and local patches neither carry nor clear the field, so a
+  live badge is not flicked off by a status-only update between fetches; the
+  next complete fetch drops it once the session is idle.
+  */
+  merged.contextUsage = options.fullSnapshot === true && updatedAtCompare >= 0
+    ? incoming.contextUsage
+    : current.contextUsage;
+  /*
   FNXC:PromoteVisibility 2026-08-11-21:06:
   A delayed snapshot cannot attach a defined verdict over a newer task row.
   */

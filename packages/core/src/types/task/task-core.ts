@@ -814,6 +814,24 @@ export interface TaskReleaseGateVerdict {
   evaluatedForUpdatedAt?: string;
 }
 
+/**
+ * FNXC:BoardContextUsage 2026-11-12-10:59:
+ * Snapshot of one task's live AI context-window occupancy, read from the
+ * executor's active session (`session.getContextUsage()`). Ids/counts-only by
+ * construction: token counts and the model window, never prompt or transcript
+ * content. `tokens` is CURRENT CONTEXT-WINDOW OCCUPANCY — distinct from the
+ * cumulative billed `task.tokenUsage` (input/output/cache), which must not be
+ * presented as context occupancy.
+ */
+export interface TaskContextUsageSnapshot {
+  /** Current context-window occupancy in tokens. */
+  tokens: number;
+  /** The model's context window in tokens, when the runtime reports it. */
+  contextWindow?: number;
+  /** Occupancy as a rounded percent of `contextWindow`, when the window is known. */
+  percent?: number;
+}
+
 /*
 FNXC:Workspace 2026-08-15-07:51:
 The atomic per-repository store mutation and its engine callers share this entry contract so
@@ -1529,6 +1547,17 @@ export interface Task {
    * values under useTasks' evidence fingerprint, row-clock, and TTL contract.
    */
   releaseGate?: TaskReleaseGateVerdict;
+  /**
+   * FNXC:BoardContextUsage 2026-11-12-10:59:
+   * Transient, engine-populated live AI context-window occupancy for tasks
+   * with an active session, attached best-effort to the `GET /api/tasks`
+   * payload (mirroring the additive `plannerOverseerState` / `releaseGate`
+   * board-payload convention) — NEVER written to the store or task.json, and
+   * absent on SSE payloads. Presence means "live at board-fetch time";
+   * absence means the session is idle or its usage is unknown, and consumers
+   * must render nothing rather than a stale value.
+   */
+  contextUsage?: TaskContextUsageSnapshot;
   /** Explicitly assigned agent ID for task-agent linking. Distinct from Agent.taskId active execution state. */
   assignedAgentId?: string;
   /** Per-task node override. When set, this task routes to the specified node instead of the project's default node. Undefined means use the project default. Use empty string to explicitly clear. */

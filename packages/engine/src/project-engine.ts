@@ -16,6 +16,7 @@ import type {
   PlannerOverseerRuntimeSnapshot,
   PlannerInterventionSourceLink,
   PlannerOversightStage,
+  TaskContextUsageSnapshot,
 } from "@fusion/core";
 import {
   computeWorkflowIrPin,
@@ -2278,6 +2279,25 @@ export class ProjectEngine {
       advisorBacklog: advisor.backlog,
       lastAdviceSeverity: advisor.lastAdviceSeverity,
     };
+  }
+
+  /**
+   * FNXC:BoardContextUsage 2026-11-12-10:59:
+   * Live per-task AI context-window occupancy from this engine's executor
+   * active sessions, for the `GET /api/tasks` board enrichment. Fail-soft and
+   * synchronous like `getPlannerOverseerRuntimeSnapshot`: a stopped runtime, a
+   * missing executor, or a throwing accessor degrades to an empty map so a hot
+   * board request is never put at risk. Only tasks with a live session appear;
+   * idle tasks are absent so the board renders nothing rather than stale data.
+   */
+  getLiveTaskContextUsage(): Map<string, TaskContextUsageSnapshot> {
+    try {
+      const executor = this.runtime.getExecutor?.();
+      if (!executor?.getLiveTaskContextUsage) return new Map();
+      return executor.getLiveTaskContextUsage();
+    } catch {
+      return new Map();
+    }
   }
 
   /**

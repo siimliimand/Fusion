@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { memo, useCallback, useState, useRef, useEffect, useLayoutEffect, useMemo, type CSSProperties, type ReactElement } from "react";
 import { createPortal } from "react-dom";
-import { Link, Clock, Layers, Pencil, ChevronDown, Folder, Target, Bot, Trash2, RotateCw, Zap, GitBranch, GitPullRequest, AlertTriangle, Eye, MoreHorizontal, Sparkles, X } from "lucide-react";
+import { Link, Clock, Layers, Pencil, ChevronDown, Folder, Target, Bot, Trash2, RotateCw, Zap, GitBranch, GitPullRequest, AlertTriangle, Eye, Gauge, MoreHorizontal, Sparkles, X } from "lucide-react";
 import { isTaskExternallyBlocked } from "@fusion/core";
 import type { Task, TaskDetail, Column, ColumnId, PrInfo, IssueInfo, TaskPriority, GithubIssueAction, MergeResult, PlannerOversightLevel } from "@fusion/core";
 import {
@@ -30,6 +30,7 @@ import { ProviderIcon } from "./ProviderIcon";
 import { PluginSlot } from "./PluginSlot";
 import { useBadgeWebSocket } from "../hooks/useBadgeWebSocket";
 import { plannerOverseerBadgeTooltip, plannerOverseerStateLabel } from "./plannerOverseerBadge";
+import { contextUsageBadgeLabel, contextUsageBadgeTooltip, contextUsageLevel } from "./contextUsageBadge";
 import { getFreshBatchData } from "../hooks/useBatchBadgeFetch";
 import { useTaskDiffStats } from "../hooks/useTaskDiffStats";
 import { useAgentsMapCache } from "../hooks/useAgentsMapCache";
@@ -1125,7 +1126,11 @@ function areTaskCardPropsEqual(previous: TaskCardProps, next: TaskCardProps): bo
     // overseer state changes (idle/watching/steering/recovering/awaiting-confirmation) so a
     // consumer's badge stays live. FN-7516 owns the visual affordance/design; this task only
     // provides a minimal, type-safe, guarded read.
-    JSON.stringify(previousTask.plannerOverseerState ?? null) === JSON.stringify(nextTask.plannerOverseerState ?? null)
+    JSON.stringify(previousTask.plannerOverseerState ?? null) === JSON.stringify(nextTask.plannerOverseerState ?? null) &&
+    // FNXC:BoardContextUsage 2026-11-12-10:59: repaint whenever the transient live context-usage
+    // snapshot moves so the footer chip updates between board fetches. Presence↔absence flips the
+    // chip itself; absence (session idle) renders no shell.
+    JSON.stringify(previousTask.contextUsage ?? null) === JSON.stringify(nextTask.contextUsage ?? null)
   );
 }
 
@@ -3226,6 +3231,28 @@ function TaskCardComponent({
     && Boolean(githubTrackedIssue);
   const footerHasLeadingContent = Boolean(filesChangedButton)
     || (isGitHubImportedTask && !showLinkedIssueChipForImport);
+  /*
+  FNXC:BoardContextUsage 2026-11-12-10:59:
+  Live AI context-window chip for the footer-right telemetry cluster (beside
+  cost and execution time). The engine attaches `task.contextUsage` only while
+  the task has a live session, so an absent field renders no chip shell at all
+  — the same guarded-read contract as the planner-overseer badge. Label and
+  tooltip logic live in contextUsageBadge.ts (module scope, pure) so this stays
+  a guarded render only.
+  */
+  const contextUsage = task.contextUsage;
+  const contextUsageChip = contextUsage ? (
+    <span
+      className="card-context-usage"
+      data-context-usage-level={contextUsageLevel(contextUsage)}
+      title={contextUsageBadgeTooltip(contextUsage, t)}
+      aria-label={contextUsageBadgeTooltip(contextUsage, t)}
+      data-testid={`card-context-usage-${task.id}`}
+    >
+      <Gauge size={11} aria-hidden="true" />
+      <span>{contextUsageBadgeLabel(contextUsage, t)}</span>
+    </span>
+  ) : null;
   const costBadgeChip = cardCostLabel ? (
     <span
       className="card-cost-indicator"
@@ -3240,6 +3267,7 @@ function TaskCardComponent({
     </span>
   ) : null;
   const footerRightHasContent = Boolean(cardCostLabel
+    || contextUsage
     || timeIndicator
     || showNearDuplicateChip
     || showUndoOfChip
@@ -3377,6 +3405,7 @@ function TaskCardComponent({
       The execution-time badge belongs in the bottom-right footer cluster and must match sibling footer badge sizing while preserving its existing label, title, aria text, and live-update data.
       */}
       {costBadgeChip}
+      {contextUsageChip}
       {timeIndicator && (
         <span
           className="card-time-indicator"

@@ -1432,6 +1432,33 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
       }
 
       /*
+      FNXC:BoardContextUsage 2026-11-12-10:59:
+      Attach the transient `contextUsage` snapshot for each task with a live
+      executor session, so the board can show per-task AI context-window
+      occupancy at a glance. One executor read serves the whole board (flat
+      cost, not per-row), and the contract mirrors the overseer enrichment
+      above: best-effort, never fails the board load, and the field is omitted
+      (never null) for idle tasks so those payloads stay byte-identical.
+      Persisted `task.tokenUsage` is cumulative BILLED tokens and is
+      deliberately not used here — this field is current context-window
+      occupancy only.
+      */
+      try {
+        if (engine && tasks.length > 0) {
+          const usageByTask = engine.getLiveTaskContextUsage?.();
+          if (usageByTask && usageByTask.size > 0) {
+            tasks = tasks.map((task) => {
+              const contextUsage = usageByTask.get(task.id);
+              return contextUsage ? { ...task, contextUsage } : task;
+            });
+          }
+        }
+      } catch {
+        // Context-usage enrichment is best-effort and must never fail the
+        // board load — fall through with the un-enriched task list.
+      }
+
+      /*
       FNXC:CodingIdeasWorkflow 2026-07-26-15:30:
       Attach `awaitingPlanning` for plan-in-place (Todo) cards so the "Queued to plan" / "Ready"
       badge pair names the cap the card is actually waiting on. Same additive, best-effort,

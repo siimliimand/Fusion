@@ -1236,6 +1236,7 @@ The execution-time badge is part of the footer's bottom-right chip cluster, so i
 */
 .card-time-indicator,
 .card-cost-indicator,
+.card-context-usage,
 .card-github-tracking-chip,
 .card-retry-badge,
 .card-create-pr-action {
@@ -1257,6 +1258,7 @@ The execution-time badge is part of the footer's bottom-right chip cluster, so i
 
 .card-time-indicator > span,
 .card-cost-indicator > span,
+.card-context-usage > span,
 .card-github-tracking-chip > span,
 .card-retry-badge > span,
 .card-create-pr-action > span {
@@ -1268,6 +1270,7 @@ The execution-time badge is part of the footer's bottom-right chip cluster, so i
 
 .card-time-indicator svg,
 .card-cost-indicator svg,
+.card-context-usage svg,
 .card-github-tracking-chip svg,
 .card-retry-badge svg,
 .card-create-pr-action svg,
@@ -1316,6 +1319,26 @@ The execution-time badge is part of the footer's bottom-right chip cluster, so i
 
 .card-github-tracking-link {
   text-decoration: none;
+}
+
+/*
+FNXC:BoardContextUsage 2026-11-12-10:59:
+Live AI context-occupancy chip. Info tone by default (a live reading is
+informational, not alarming); warning tone at >=80% occupancy so an operator
+scanning the board spots a session approaching its window without reading
+numbers. Tones reuse the existing semantic status tokens with color-mix, never
+raw hex/rgba, and the chip inherits the shared footer-chip sizing block above.
+*/
+.card-context-usage {
+  border-color: color-mix(in srgb, var(--color-info) 30%, transparent);
+  background: color-mix(in srgb, var(--color-info) 10%, transparent);
+  color: var(--color-info);
+}
+
+.card-context-usage[data-context-usage-level="warning"] {
+  border-color: color-mix(in srgb, var(--color-warning) 45%, transparent);
+  background: color-mix(in srgb, var(--color-warning) 14%, transparent);
+  color: var(--color-warning);
 }
 
 .card-duplicate-chip-group {
@@ -2189,6 +2212,7 @@ The three-dot menu is the sole card move/action entry point. Keep this shared bu
 
   .card-time-indicator,
   .card-cost-indicator,
+  .card-context-usage,
   .card-github-tracking-chip,
   .card-retry-badge,
   .card-create-pr-action {

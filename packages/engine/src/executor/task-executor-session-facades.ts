@@ -12,6 +12,7 @@ import { getTaskCompletionBlockerForStore } from "../execution/task-completion.j
 import { buildWorkflowFailureScopeGuard } from "./workflow-failure-scope-guard.js";
 import { resolveAuthoritativeExternalExecutionRoute } from "./resolve-authoritative-external-execution-route.js";
 import { TaskExecutorWorktreePureFacades } from "./task-executor-worktree-pure-facades.js";
+import { collectLiveTaskContextUsage } from "./live-task-context-usage.js";
 import { ChatSessionMemoryCapture, createStashChatMemoryCaptureSink, type ChatEventEmitter, type RuntimeProjectIdentity } from "./memory-capture.js";
 
 export abstract class TaskExecutorSessionFacades extends TaskExecutorWorktreePureFacades {
@@ -48,6 +49,18 @@ export abstract class TaskExecutorSessionFacades extends TaskExecutorWorktreePur
   getExecutingTaskIds(): Set<string> { return impl.getExecutingTaskIdsImpl(bags.buildTaskLivenessDeps(this)); }
   hasActivePlanningWorkflowSession(taskId: string): boolean { return impl.hasActivePlanningWorkflowSessionImpl(bags.buildTaskLivenessDeps(this), taskId); }
   isTaskActive(taskId: string): boolean { return impl.isTaskActiveImpl(bags.buildTaskLivenessDeps(this), taskId); }
+  /*
+  FNXC:BoardContextUsage 2026-11-12-10:59:
+  Live per-task AI context-window occupancy for the board payload. Synchronous,
+  best-effort, and lifecycle-neutral: it only READS the live session surfaces and
+  never mutates executor state. Returns an empty map when no session is live.
+  */
+  getLiveTaskContextUsage(): Map<string, import("@fusion/core").TaskContextUsageSnapshot> {
+    return collectLiveTaskContextUsage({
+      activeSessions: this.activeSessions,
+      activeWorkflowStepSessions: this.activeWorkflowStepSessions,
+    });
+  }
   isTaskLiveForOverseerRetry(taskId: string): boolean {
     return impl.isTaskLiveForOverseerRetryImpl({
       ...facadeFields(this, ["resumingUnpaused"]),
