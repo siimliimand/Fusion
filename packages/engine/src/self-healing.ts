@@ -131,6 +131,7 @@ import { getTaskCompletionBlockerForStore } from "./execution/task-completion.js
 import { shouldReclaimWedgedMerge } from "./merge/merge-reclaim-policy.js";
 import { resolveRemediationCheckout } from "./executor/resolve-remediation-checkout.js";
 import { isDefiniteEmptyCodeReviewRevise } from "./executor/review-empty-content-close.js";
+import { findUnavailablePlanLockRejection } from "./executor/plan-lock-dispatch-breaker.js";
 import { evaluateWorkflowMergeBoundary } from "./executor/evaluate-workflow-merge-boundary.js";
 import { loadMergeBoundaryInstances } from "./executor/workflow-merge-boundary-helpers.js";
 import { recoverMergeBoundaryEvidenceGap } from "./executor/route-graph-failure-to-execution-resume.js";
@@ -1017,6 +1018,15 @@ export class SelfHealingManager extends SelfHealingGitEvidence {
    * because the task leaves the promotable state before returning to it.
    */
   private strandedCompletedFailureProvenanceWarned = new Set<string>();
+  /*
+   * FNXC:SpecLockDispatchBreaker 2026-11-12-08:04:
+   * Dedup for `task:reclaim-self-owned-branch-conflict-no-action` emissions caused by a
+   * deterministic plan-lock park: at most one audit row and one task-log line per task while the
+   * park persists, so the ~4.5-minute sweep cadence cannot spam telemetry. Cleared when the task
+   * no longer carries the blocking rejection, which re-arms reporting if the card degenerates
+   * again after an operator fix.
+   */
+  private planLockReclaimSkipsReported = new Set<string>();
   /*
    * FNXC:StrandedHoldContinuation 2026-07-26-14:15:
    * FN-8592 no-action findings are candidate-only but can persist across
@@ -2290,6 +2300,7 @@ export class SelfHealingManager extends SelfHealingGitEvidence {
 
     this.finalizeUnprovenWarned.clear();
     this.strandedCompletedFailureProvenanceWarned.clear();
+    this.planLockReclaimSkipsReported.clear();
     // FNXC:OrphanedWorkItems 2026-11-04-09:40 (FIX-3): a fresh process re-arms the deduped
     // no-action diagnostic, matching the sibling FN-8141/FN-8592 memos above.
     this.orphanedWorkItemNoActionAudited.clear();
@@ -4775,6 +4786,50 @@ export class SelfHealingManager extends SelfHealingGitEvidence {
       let recovered = 0;
       const integrationBranch = await resolveIntegrationBranch(this.options.rootDir, settings);
       for (const task of candidates) {
+        /*
+        FNXC:SpecLockDispatchBreaker 2026-11-12-08:04:
+        A card whose latest plan-review failure is a deterministic spec-lock parser rejection is
+        PARKED BY DESIGN, not stranded: reclaiming its worktree, clearing `status`/`error`, and
+        requeueing it resurrects the card into another full reviewer session over unchanged parser
+        input, which is exactly the KB-001 loop (16 identical review attempts in one morning, ~141M
+        cumulative tokens). This sweep owns the resurrection, so it also owns the refusal — the
+        same rule the remediation seam and failed-step recovery already enforce. The card keeps its
+        failed gate and its worktree untouched until PROMPT.md changes (which changes the stamped
+        plan-input hash and reopens the dispatch breaker) or an operator intervenes. The check runs
+        BEFORE the branch/worktree guard so a card whose checkout was already removed still re-arms
+        the dedup when its park clears.
+        */
+        const planLockRejection = findUnavailablePlanLockRejection(task);
+        if (planLockRejection) {
+          if (!this.planLockReclaimSkipsReported.has(task.id)) {
+            this.planLockReclaimSkipsReported.add(task.id);
+            const diagnostic = planLockRejection.output || planLockRejection.notes || "unavailable plan lock";
+            await this.store.logEntry(
+              task.id,
+              "[recovery] reclaim withheld — deterministic plan-lock park",
+              `The latest Plan Review failure is a deterministic spec-lock parser rejection, so reclaim/requeue recovery is withheld to avoid re-running the review over unchanged plan input.\nDiagnostic: ${diagnostic}\nFix PROMPT.md (for example, add the missing '## Mission' section) or retry the task after changing the plan.`,
+            );
+            try {
+              await emitBoundedRunAudit(this.store, {
+                taskId: task.id,
+                agentId: "self-healing",
+                runId: generateSyntheticRunId("self-heal-plan-lock-reclaim-skip", task.id),
+                domain: "database",
+                mutationType: "task:reclaim-self-owned-branch-conflict-no-action",
+                target: task.id,
+                metadata: {
+                  taskId: task.id,
+                  reason: "plan-lock-unavailable",
+                  stepId: planLockRejection.workflowStepId,
+                },
+              }, { log });
+            } catch (err: unknown) {
+              log.warn(`Failed to record plan-lock reclaim-skip audit for ${task.id}: ${err instanceof Error ? err.message : String(err)}`);
+            }
+          }
+          continue;
+        }
+        this.planLockReclaimSkipsReported.delete(task.id);
         if (!task.branch || !task.worktree) continue;
         if (task.userPaused || isTaskExternallyBlocked(task)) continue;
         const liveExecutionSignal = this.getFalsePositiveRequeueSignal(task, {

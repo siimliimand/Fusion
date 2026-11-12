@@ -152,7 +152,7 @@ import { SelfHealingManager, isBranchAheadOfBase, MAX_AUTO_MERGE_RETRIES, MAX_TA
 import { resolveAiMergeRootPath } from "../worktree/worktree-paths.js";
 import { cleanupLandedTaskWorktree } from "../merge/post-landing-worktree-cleanup.js";
 import { HeartbeatMonitor, HEARTBEAT_ERROR_RECOVERY_METADATA_KEY, HEARTBEAT_ERROR_RETRY_EXHAUSTED_PAUSE_REASON, HEARTBEAT_ERROR_UNRECOVERABLE_PAUSE_REASON, readHeartbeatErrorRetryCount } from "../agent-heartbeat.js";
-import { PlanningLifecycleLockTransportError, TaskDeletedError, TaskNotFoundError, TransitionRejectionError, type TaskStore, type Settings, type Task, type AgentStore, type Agent, type AgentHeartbeatRun, type NotificationProvider } from "@fusion/core";
+import { formatPlanLockUnavailableDiagnostic, PlanningLifecycleLockTransportError, TaskDeletedError, TaskNotFoundError, TransitionRejectionError, type TaskStore, type Settings, type Task, type AgentStore, type Agent, type AgentHeartbeatRun, type NotificationProvider } from "@fusion/core";
 import { EventEmitter } from "node:events";
 import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -9506,6 +9506,59 @@ describe("FN-5335 triple-proof no-action unit coverage", () => {
     });
 
     expect(manager.getActiveMergeTaskId()).toBe("FN-MERGE");
+  });
+
+  /*
+  FNXC:SpecLockDispatchBreaker 2026-11-12-08:04:
+  The KB-001 loop: a todo card parked by a deterministic plan-lock parser rejection was reclaimed,
+  its status/error cleared, and its card requeued by this sweep every pass — each resurrection
+  re-running a full reviewer session over identical input. The sweep must withhold reclaim/requeue
+  from that park entirely, report the refusal once (deduped across sweeps), and re-arm reporting
+  once the park is gone.
+  */
+  it("withholds reclaim/requeue from a deterministic plan-lock park and reports once per park", async () => {
+    const rejectionTask = {
+      id: "FN-PLB",
+      column: "todo",
+      paused: false,
+      status: "failed",
+      error: "Review recovery stopped at 'plan-review': Plan approved but spec lock unavailable: mission-missing (mission).",
+      branch: "fusion/fn-plb",
+      worktree: "/tmp/wt-plb",
+      workflowStepResults: [{
+        workflowStepId: "plan-review",
+        workflowStepName: "Plan Review",
+        reviewKind: "plan",
+        phase: "pre-merge",
+        status: "failed",
+        verdict: undefined,
+        output: formatPlanLockUnavailableDiagnostic({ reason: "mission-missing", unavailableSections: ["mission"], sourceHash: "c".repeat(64) }),
+      }],
+      updatedAt: new Date(Date.now() - 10_000).toISOString(),
+    };
+    let listed: unknown[] = [rejectionTask];
+    const store = createMockStore({
+      getSettings: vi.fn().mockResolvedValue({ autoMerge: true, globalPause: false, enginePaused: false } as any),
+      listTasks: vi.fn().mockImplementation(async () => listed),
+    });
+    const manager = new SelfHealingManager(store, { rootDir: "/tmp/test-project" });
+
+    await manager.reclaimSelfOwnedBranchConflicts();
+    await manager.reclaimSelfOwnedBranchConflicts();
+
+    expect(store.updateTask).not.toHaveBeenCalled();
+    expect(store.moveTask).not.toHaveBeenCalled();
+    const planLockEmissions = () => (store as any).recordRunAuditEvent.mock.calls
+      .filter(([event]: any[]) => event?.mutationType === "task:reclaim-self-owned-branch-conflict-no-action" && event?.metadata?.reason === "plan-lock-unavailable");
+    expect(planLockEmissions()).toHaveLength(1);
+
+    // The park clears (operator fixed PROMPT.md): the dedup re-arms, and a later degeneration reports again.
+    listed = [{ ...rejectionTask, worktree: null, branch: null, workflowStepResults: [] }];
+    await manager.reclaimSelfOwnedBranchConflicts();
+    listed = [rejectionTask];
+    await manager.reclaimSelfOwnedBranchConflicts();
+    expect(planLockEmissions()).toHaveLength(2);
+    manager.stop();
   });
 
   it("emits finalize-no-op-review no-action when unproven fallback fails triple proof", async () => {
