@@ -2992,6 +2992,10 @@ export async function runImplementation(
                     "3. Continue until all steps are done, then call fn_task_done.",
                     "Do NOT ask for permission. Do NOT write a summary. Just call a tool and keep working.",
                     "",
+                    "Cost rules for this retry:",
+                    "- Steps already marked done or skipped are COMPLETE. Do not re-implement, re-run, or re-verify them from scratch.",
+                    "- Establish state cheaply first (fn_task_list / fn_task_show, git status, targeted reads), then either call fn_task_done or finish only the remaining work.",
+                    "",
                     "Original task:",
                     buildExecutionPrompt(
                       detail,
@@ -3012,6 +3016,10 @@ export async function runImplementation(
                     "The task may already be complete — review the current state of the worktree and either:",
                     "1. If the work is done, call fn_task_done with a summary of what was accomplished.",
                     "2. If there is remaining work, finish it and then call fn_task_done.",
+                    "",
+                    "Cost rules for this retry:",
+                    "- Steps already marked done or skipped are COMPLETE. Do not re-implement, re-run, or re-verify them from scratch.",
+                    "- Establish state cheaply first (fn_task_list / fn_task_show, git status, targeted reads), then either call fn_task_done or finish only the remaining work.",
                     "",
                     "Original task:",
                     buildExecutionPrompt(
